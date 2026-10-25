@@ -1,0 +1,16 @@
+{
+  "name": "theme-radar",
+  "version": "0.1.0-beta.2",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.14.0 <25"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.ts",
+    "doctor": "node src/cli.ts doctor",
+    "demo": "node src/cli.ts demo",
+    "mcp": "node src/mcp.ts",
+    "start": "node src/cli.ts serve"
+  }
+}

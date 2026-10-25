@@ -1,0 +1,9 @@
+{
+  "enabled": false,
+  "mode": "manual_round_only",
+  "from": null,
+  "recipient": null,
+  "maxAttemptsPerRun": 1,
+  "maxMessagesPerDay": 2,
+  "maxItemsPerRun": 3
+}

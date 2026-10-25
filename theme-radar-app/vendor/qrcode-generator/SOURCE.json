@@ -1,0 +1,8 @@
+{
+  "package": "qrcode-generator",
+  "version": "1.4.4",
+  "repository": "https://github.com/kazuhikoarase/qrcode-generator",
+  "tarball": "https://registry.npmjs.org/qrcode-generator/-/qrcode-generator-1.4.4.tgz",
+  "sha256": "ab6ed47d378877441deae95972e07b2716c26545a735a23aa6b9d442b33026ed",
+  "license": "MIT"
+}

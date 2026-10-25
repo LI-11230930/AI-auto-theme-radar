@@ -1,0 +1,6 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {validateOcrFrame} from '../src/frame-ocr.ts';
+function frame(){const png=Buffer.alloc(33);Buffer.from('89504e470d0a1a0a','hex').copy(png);png.writeUInt32BE(13,8);png.write('IHDR',12);png.writeUInt32BE(800,16);png.writeUInt32BE(200,20);return {schema:'theme-radar-visible-frame-v1',bvid:'BV1234567890',page:1,time:5,duration:33,observedAt:new Date().toISOString(),region:'video-bottom-45pct',width:800,height:200,imagePng:'data:image/png;base64,'+png.toString('base64')};}
+test('画面文件仅校验单帧与PNG头，不把图片清单当OCR或字幕阅读',()=>{const r=validateOcrFrame(frame());assert.equal(r.png.length,33);assert.equal(r.metadata.imagePng,undefined);assert.equal(r.archiveWritten,false);assert.equal(r.modelRead,false);assert.equal(r.scope,'single_visible_frame_ocr_probe');});
+test('拒绝凭据、远程图像、分P/时刻/尺寸错配与超预算，不把未知填完整',()=>{for(const x of [{...frame(),cookie:'reject'},{...frame(),imagePng:'https://evil.invalid/image.png'},{...frame(),page:2},{...frame(),time:34},{...frame(),width:1601},{...frame(),height:500},{...frame(),observedAt:'2099-01-01T00:00:00Z'},{...frame(),imagePng:frame().imagePng+'garbage'},{...frame(),imagePng:'data:image/png;base64,'+'A'.repeat(2800001)}])assert.throws(()=>validateOcrFrame(x),{code:'INVALID_OCR_FRAME'});});

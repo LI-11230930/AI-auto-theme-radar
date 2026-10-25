@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {runInNewContext} from 'node:vm';
+const sandbox:any={URL};runInNewContext(readFileSync('../browser-extension/frame-core.js','utf8'),sandbox);const c=sandbox.ThemeRadarFrameCore;
+const probe=()=>({url:'https://www.bilibili.com/video/BV1234567890?p=1',paused:true,time:5,duration:33,visible:true,left:100,top:50,width:800,height:450,viewportWidth:1200,viewportHeight:900,fit:'contain',videoWidth:1920,videoHeight:1080});
+test('单帧只截播放器下45%，按视口和实际像素换算并限定导出尺寸',()=>{const box=c.crop(probe(),2400,1800);assert.equal(box.x,200);assert.equal(box.y,595);assert.equal(box.width,1600);assert.equal(box.height,405);assert.equal(box.outputWidth,1600);assert.equal(box.outputHeight,405);const letterbox=c.crop({...probe(),height:600},2400,1800);assert.equal(letterbox.y,745);assert.equal(letterbox.height,405);});
+test('错页面、播放中、画中画、播放器被裁切与窗口缩放竞争不导出',()=>{for(const p of [{...probe(),url:'https://www.bilibili.com@evil.invalid/video/BV1234567890'},{...probe(),url:probe().url+'&p=2'},{...probe(),paused:false},{...probe(),visible:false},{...probe(),left:-1},{...probe(),top:800},{...probe(),time:40}])assert.throws(()=>c.crop(p,2400,1800));assert.throws(()=>c.crop(probe(),2400,900));});
+test('前后核对BV/P1、暂停位置与播放器几何，追踪参数变化可兼容',()=>{assert.ok(c.sameFrame(probe(),{...probe(),url:probe().url+'&spm_id_from=sample'}));for(const p of [{...probe(),url:probe().url.replace('BV1234567890','BV1234567891')},{...probe(),paused:false},{...probe(),time:6},{...probe(),width:700}])assert.equal(c.sameFrame(probe(),p),false);});
+test('单帧导出没有网络或自动循环，不把图像当作字幕或模型阅读',()=>{const source=readFileSync('../browser-extension/frame-export.js','utf8');assert.ok(!/fetch\s*\(|XMLHttpRequest|setInterval|chrome\.storage|chrome\.cookies|document\.cookie/.test(source));assert.match(source,/captureVisibleTab/);assert.match(source,/未上传、OCR、归档或调用模型/);});

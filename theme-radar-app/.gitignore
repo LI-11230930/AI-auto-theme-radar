@@ -1,0 +1,11 @@
+# Local configuration, credentials, account data, models and generated previews
+config.local.json
+.data/
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+integrations/*.local.*
+integrations/*.mcp.json
+integrations/Codex.config.toml
+integrations/DSH.cordis.yml

@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "dataDir": ".data",
+  "operatorUrl": "http://127.0.0.1:8767",
+  "timezone": "Asia/Shanghai",
+  "recipient": null,
+  "sendTimes": [
+    "09:00",
+    "18:00"
+  ],
+  "runtimeEnabled": false,
+  "defaultAgent": "DSH",
+  "topics": [],
+  "limits": {
+    "candidates": 20,
+    "selected": 5,
+    "commentsPerRun": 1,
+    "commentsHardLimit": 3,
+    "runnerTimeoutMs": 60000,
+    "runnerOutputBytes": 2000000
+  },
+  "accounts": {
+    "bilibili": null,
+    "xiaohongshu": null
+  },
+  "bilibili": {
+    "credentialFile": null,
+    "pythonCommand": null,
+    "asr": {
+      "enabled": false,
+      "pythonCommand": null,
+      "modelDir": null
+    }
+  },
+  "xiaohongshu": {
+    "baseUrl": "http://127.0.0.1:18060"
+  },
+  "email": {
+    "enabled": false,
+    "formatStatus": "confirmed",
+    "transport": "smtp",
+    "from": null,
+    "host": null,
+    "port": 465,
+    "username": null,
+    "passwordEnv": "THEME_RADAR_SMTP_PASSWORD"
+  },
+  "runners": {
+    "DSH": {
+      "command": "dsh",
+      "prefixArgs": [],
+      "env": {}
+    },
+    "WorkBuddy": {
+      "command": null,
+      "prefixArgs": [],
+      "env": {}
+    },
+    "Codex": {
+      "command": "codex",
+      "prefixArgs": [],
+      "env": {}
+    },
+    "TRAE": {
+      "command": "traecli",
+      "prefixArgs": [],
+      "env": {}
+    }
+  },
+  "network": {
+    "proxyUrl": null
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "github": {
+    "subject": "GitHub 精选｜{date} {slot}",
+    "sections": [
+      "projects",
+      "daily",
+      "weekly"
+    ],
+    "titles": {
+      "projects": "主题项目",
+      "daily": "GitHub 日榜",
+      "weekly": "GitHub 周榜"
+    },
+    "entry": "{index}. {title}\n{url}\n{stars}\n{summary}\n{flow}"
+  },
+  "bilibili": {
+    "subject": "视频精选｜{date} {slot}",
+    "title": "我的视频精选",
+    "entry": "{index}. {title}\n{url}\n{summary}\n{flow}"
+  },
+  "footer": ""
+}

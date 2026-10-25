@@ -1,0 +1,9 @@
+{
+  "manifest_version": 3,
+  "name": "主题雷达 · 可见字幕与投稿链接",
+  "version": "0.3.2",
+  "description": "手动导出可见字幕和投稿链接，或启动短期有界字幕批次；不读取Cookie、评论或音视频文件。",
+  "permissions": ["activeTab", "scripting"],
+  "optional_host_permissions": ["http://127.0.0.1:8767/*"],
+  "action": {"default_title": "主题雷达 · 可见字幕采集", "default_popup": "popup.html"}
+}

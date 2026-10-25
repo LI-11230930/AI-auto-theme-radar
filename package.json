@@ -1,0 +1,14 @@
+{
+  "name": "theme-radar",
+  "version": "0.1.0-beta.2",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "engines": {"node": ">=24.14.0 <25"},
+  "scripts": {
+    "start": "node theme-radar-app/tools/bootstrap.ts",
+    "setup": "node theme-radar-app/tools/bootstrap.ts configure",
+    "test": "node scripts/test.mjs",
+    "check": "node theme-radar-app/tools/check-installation.ts"
+  }
+}
