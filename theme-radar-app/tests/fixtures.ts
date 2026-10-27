@@ -16,3 +16,5 @@ export function mockFetch(url:string):Promise<Response>{
 }
 
 export const videoBody="先读取本地资料并校验字段，随后按已保存的主题规则筛选。脚本把候选交给模型生成中文摘要，保留原始链接与引用。写入结果前检查唯一标识，避免重复处理；失败时保存检查点并结束本轮。用户确认后才执行通知，回执用于核对发送状态。";
+
+export function fixturePlan(extra:any={}){return {id:'my-plan',name:'自定义计划',enabled:false,agent:'DSH',execution:'attached',topicIds:['sample'],platforms:['github'],schedule:{kind:'manual'},delivery:'draft',recipient:null,from:null,sendApproved:false,maxMessagesPerDay:2,readLimit:3,githubReadLimit:2,subject:'主题精选｜{date} {time}',...extra};}

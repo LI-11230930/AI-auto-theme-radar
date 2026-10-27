@@ -2,7 +2,7 @@ import type {Store} from './store.ts';
 import {RadarError} from './model.ts';
 import {archivedAnalysis} from './archive-reading.ts';
 
-export const notificationPlan=(recipient:string|null=null)=>({bilibili:'email',github:'email',xiaohongshu:'paused',recipient,timezone:'Asia/Shanghai',slots:['09:00','18:00'],commentMentionEnabled:false,emailFormat:{state:'confirmed',version:'github-brief-zh-v3',githubSections:['当日主题项目','GitHub Trending Daily前十','GitHub Trending Weekly前十'],copy:'链接和简短中文介绍；技术证据仅留档',appliesTo:['bilibili','github']},deliveryEnabled:false,scope:'邮箱从本地配置读取；时段保留为规划，不启用发送或恢复调度'});
+export const notificationPlan=(recipient:string|null=null,format:{formatState?:string;sections?:string[]}={})=>({bilibili:'email',github:'email',xiaohongshu:'paused',recipient,timezone:'Asia/Shanghai',slots:['09:00','18:00'],commentMentionEnabled:false,emailFormat:{state:format.formatState||'default_template_available',version:format.formatState==='custom_template_configured'?'custom':'github-brief-zh-v3',githubSections:(format.sections||['projects','daily','weekly']).map(id=>({projects:'主题项目',daily:'GitHub Trending Daily前十',weekly:'GitHub Trending Weekly前十'}[id])),copy:'链接和简短中文介绍；技术证据仅留档',appliesTo:['bilibili','github']},deliveryEnabled:false,scope:'邮箱与模板由使用者配置；时段保留为规划，本视图不授权发送或调度'});
 
 /** Format-independent archive projection, not a frozen outbox or delivery promise. */
 export function digestCandidates(store:Store,options:{platform?:string;topicId?:string;itemKeys?:string[]}={},recipient:string|null=null){

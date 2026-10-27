@@ -11,7 +11,7 @@
 ```powershell
 git remote add origin https://github.com/YOUR_USERNAME/theme-radar.git
 git push -u origin main
-git push origin v0.1.0-beta.2
+git push origin v0.1.0-beta.12
 ```
 
 浏览器登录不一定等于Git命令行已认证。若Git弹出账户授权，使用自己的账号完成；不要把令牌写入命令或源码。也可用GitHub Desktop添加此本地仓库，再Publish repository，并取消Keep this code private。
@@ -20,7 +20,7 @@ git push origin v0.1.0-beta.2
 
 上传后首页会显示README，MIT由根目录LICENSE声明。编辑About，可用简介“按自定义主题阅读B站与GitHub，由Agent筛选并生成邮件摘要”，并添加mcp、ai-agent、automation、bilibili等相关Topics。
 
-进入Releases → Draft a new release，选择v0.1.0-beta.2标签，标题可用“Theme Radar v0.1.0-beta.2”；版本说明参考CHANGELOG.md。可附源码ZIP。Actions第一次在GitHub运行后检查结果；本地通过不代替托管运行。
+进入Releases → Draft a new release，选择v0.1.0-beta.12标签，标题可用“Theme Radar v0.1.0-beta.12”；版本说明参考CHANGELOG.md。可附源码ZIP。Actions第一次在GitHub运行后检查结果；本地通过不代替托管运行。
 
 官方指引：https://docs.github.com/en/migrations/importing-source-code/using-the-command-line-to-import-source-code/adding-locally-hosted-code-to-github
 

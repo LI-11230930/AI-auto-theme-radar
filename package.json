@@ -1,6 +1,6 @@
 {
   "name": "theme-radar",
-  "version": "0.1.0-beta.2",
+  "version": "0.1.0-beta.12",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -8,6 +8,7 @@
   "scripts": {
     "start": "node theme-radar-app/tools/bootstrap.ts",
     "setup": "node theme-radar-app/tools/bootstrap.ts configure",
+    "doctor": "node theme-radar-app/src/cli.ts setup-check",
     "test": "node scripts/test.mjs",
     "check": "node theme-radar-app/tools/check-installation.ts"
   }

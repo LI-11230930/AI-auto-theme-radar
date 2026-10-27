@@ -1,8 +1,8 @@
 import {spawn} from 'node:child_process';import {resolve} from 'node:path';
-import {APP_ROOT,loadConfig} from '../src/config.ts';import {prepareDshLaunch,reserveDshProcess} from '../src/dsh-launch.ts';import {publicError} from '../src/model.ts';
+import {APP_ROOT,loadConfig,configFilePath} from '../src/config.ts';import {prepareDshLaunch,reserveDshProcess} from '../src/dsh-launch.ts';import {publicError} from '../src/model.ts';
 try{
  const args=process.argv.slice(2);let port=8789;for(let i=0;i<args.length;i++){if(args[i]==='--port'){if(!/^\d{4,5}$/.test(args[i+1]||''))throw Error('Invalid port');port=Number(args[++i]);}else if(!['--prepare','--no-open'].includes(args[i]))throw Error('Invalid option');}
- const configFile=resolve(process.env.THEME_RADAR_CONFIG||resolve(APP_ROOT,'config.local.json')),config=loadConfig(configFile),plan=prepareDshLaunch({spec:config.runners.DSH,appRoot:APP_ROOT,dataDir:config.dataDir,configFile,port,openBrowser:!args.includes('--no-open')});
+ const configFile=configFilePath(),config=loadConfig(configFile),plan=prepareDshLaunch({spec:config.runners.DSH,appRoot:APP_ROOT,dataDir:config.dataDir,configFile,port,openBrowser:!args.includes('--no-open')});
  if(process.argv.includes('--prepare'))console.log(JSON.stringify({prepared:true,patch:plan.patch,globalProfileChanged:false,started:false}));
  else{
   console.log('正在启动主题雷达专用DSH网页会话：http://127.0.0.1:'+port+'/ 。使用原模型渠道和本项目MCP，未修改全局配置。输入任务后才会调用模型或阅读内容；可用app/stop-dsh.ps1停止本项目入口。');

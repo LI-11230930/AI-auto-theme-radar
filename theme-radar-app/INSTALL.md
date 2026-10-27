@@ -10,6 +10,10 @@ node theme-radar-app/tools/bootstrap.ts
 
 打开 http://127.0.0.1:8767/ 。首次自动创建config.local.json，主题列表为空，并生成integrations内的本机MCP片段；重复运行不覆盖已有配置。Ctrl+C停止服务。Windows也可在本目录使用 ./start.ps1 -Mode configure 和 ./start.ps1 -Mode serve。
 
+先查看网页顶部“开始使用 · 配置检查”：分别显示GitHub阅读、B站阅读和已有档案分析的前置条件，并提供配置入口。在theme-radar-app目录也可运行 `node src/cli.ts setup-check`。检查只核对本机配置、命令/脚本路径、凭据格式和可选模型文件，不调用模型、不访问上游、不发邮件；“本机前置条件满足”之后仍须用自己的账号完成真实读取。Windows仅发现cmd/bat包装命令时，请填实际exe或node加CLI脚本。
+
+“运行只读能力自检”会访问已启用主题对应的平台，按自己的关键词、UID或配置仓库取有界样本；空主题时全部跳过，不自动播种测试内容。它与上述本机配置检查不同。“生成本地档案预览”则只使用已存档案和榜单，遵守你的邮件模板，生成后可查看；不调用模型、不建投递，预览会注明正文或榜单缺项。主题数量不限于开发时使用的七个。
+
 ## 2. 接入现有模型
 
 网页开始兴趣轮次时，由config.local.json的defaultAgent指定后台分析器，默认DSH。已有MCP客户端的模型连接不等于后台DSH已经配置。
@@ -40,9 +44,11 @@ node theme-radar-app/tools/bootstrap.ts
 
 configure后生成的integrations/DSH.mcp.json、WorkBuddy.mcp.json、TRAE.mcp.json提供stdio字段，Codex.config.toml提供TOML片段。按自己宿主的MCP设置导入或合并，不要覆盖已有配置文件。它们包含本机绝对路径，不能直接发给其他电脑使用。
 
-实际调用radar_status，确认工具30项和service.restartRequired=false。升级后重连MCP进程。配置片段生成不等于客户端已接入。
+自定义配置位置时，在启动前设置`THEME_RADAR_CONFIG`为你自己的JSON文件路径，再运行bootstrap。首次只在该位置创建配置；四宿主片段和专用DSH入口都会引用同一绝对路径，数据目录相对于该配置文件解析。指定文件丢失时直接报错，不会静默切换到默认账本；已有文件不会被初始化覆盖。更改此环境变量后应重新生成并导入相应片段。
 
-DSH项目web入口已实测直接调用status与兴趣轮次；WorkBuddy已实测领取/提交阅读判断，TRAE已实测查询/复用。Codex提供配置片段，但不同发行版实际入口与完整轮次仍需安装者核对。WorkBuddy/TRAE的交互阅读可使用当前宿主模型；一键兴趣轮次仍使用配置的后台分析器。
+实际调用radar_status，确认工具41项、service.restartRequired=false；统一任务还需operator.ready=true。operator.code=OPERATOR_REQUIRED时可调用radar_operator_start启动本机服务；版本或账本不符时按提示核对，不覆盖其他服务。升级后重连MCP进程。配置片段生成不等于客户端已接入。
+
+DSH项目web入口已实测直接调用status与兴趣轮次；WorkBuddy已实测统一轮次领取/提交模型任务并冻结真实P1草稿（未发信），TRAE已实测查询/复用。Codex提供配置片段，但不同发行版实际入口与完整轮次仍需安装者核对。旧一键兴趣轮次仍使用配置的后台分析器；beta.6统一计划的attached模式则使用当前宿主自己的模型，通过同一next/submit协议完成。后台模式使用选定CLI，WorkBuddy没有已验证CLI时只支持attached。计划配置与自定义频率见 ../docs/AUTOMATION.md。
 
 ## 4. B站
 
@@ -61,6 +67,12 @@ DSH项目web入口已实测直接调用status与兴趣轮次；WorkBuddy已实�
 邮件草稿准备无需打开真实投递。B站手动政策、Agent邮箱连接与GitHub SMTP说明见 ../docs/USAGE.md 和 integrations/WORKFLOW.md 。没有邮箱连接就保留草稿，不自动发送。
 
 ## 6. 升级与备份
+
+验证台“数据库备份与恢复演练”可创建本机数据库快照，再在临时副本中逐表逐行校验15张表。演练会测试把发送中断记录标为“不确定”、作废旧运行租约并保留已送达记录，然后删除临时副本；不会替换正式账本、访问平台、调用模型或重发邮件。
+
+命令行可用`node src/cli.ts backups create`创建托管备份、`node src/cli.ts backups`列出备份、`node src/cli.ts backup-check <backup.sqlite>`检查指定的固定备份。当前支持V2数据库、最大1GiB；不自动迁移旧版或较新schema。
+
+这些是**数据库备份**，包含主题、档案、判断、反馈和投递去重；不包含登录凭据、模型文件、config.local.json、邮件模板、作者观察及尚未投递的冻结样张文件。完整搬迁另需保留自己的配置和.data目录。备份含个人内容，仅保存在本机，勿加入公开仓库。真正从旧备份切换前，应核对备份后新增的投递记录；本工具提供检查与演练，不提供网页直接覆盖还原。
 
 更新前停止服务，运行 node src/cli.ts backup <备份文件>，另存本机config.local.json及所用模型补丁。升级时保留.data和配置，不用新默认覆盖。数据库首次打开会执行既有迁移。源码不提供整目录自动删除或强制覆盖升级。
 

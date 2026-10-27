@@ -8,13 +8,16 @@ import { collectionWindow, activityInWindow } from './selection.ts';
 import type { CollectionWindow } from './selection.ts';
 import { RadarError, hash } from './model.ts';
 import {isEmailAddress} from './email-address.ts';
+import {tracedAssessment} from './archive-reading.ts';
+import {materialPrompt} from './runner.ts';
+import {now} from './model.ts';
 import type { Assessment, Topic, Item, Evidence, Batch, Ranking } from './model.ts';
 export type Runner={name?:string;describeRankings?:(rows:Ranking[],signal?:AbortSignal)=>Promise<Ranking[]>;assess:(topic:Topic,item:Item,evidence:Evidence[],signal?:AbortSignal)=>Promise<Assessment>};
 
-export async function runGithub(options:{store:Store;source:GitHubSource;runner:Runner;topicId:string;batch:Batch;outputDir:string;recipient?:string|null;limit?:number;selectedLimit?:number;signal?:AbortSignal;verification?:boolean;mailTemplate?:any}){
+export async function runGithub(options:{store:Store;source:GitHubSource;runner:Runner;topicId:string;topicIds?:string[];freezeDelivery?:boolean;batch:Batch;outputDir:string;recipient?:string|null;limit?:number;selectedLimit?:number;signal?:AbortSignal;verification?:boolean;mailTemplate?:any}){
   const {store,source,runner,batch}=options,includeSection=(id:string)=>!options.mailTemplate||options.mailTemplate.github.sections.includes(id);
   const recipient=options.recipient;if(!isEmailAddress(recipient))throw new RadarError('RECIPIENT_REQUIRED','请先在本地配置填写自己的收件邮箱；尚未采集或准备邮件');
-  const topics=store.topics().filter(t=>t.enabled&&t.platforms.includes('github')&&(options.topicId==='*'||t.id===options.topicId));
+  const topics=store.topics().filter(t=>t.enabled&&t.platforms.includes('github')&&(options.topicId==='*'||t.id===options.topicId)&&(!options.topicIds||options.topicIds.includes(t.id)));
   if(!topics.length)throw new RadarError('TOPIC_REQUIRED','请先配置并启用 GitHub 订阅主题');
   if(options.limit!==undefined&&(!Number.isSafeInteger(options.limit)||options.limit<1))throw new RadarError('INVALID_BUDGET','候选总预算必须为正整数');
   if(options.selectedLimit!==undefined&&(!Number.isSafeInteger(options.selectedLimit)||options.selectedLimit<1))throw new RadarError('INVALID_BUDGET','精选预算必须为正整数');
@@ -36,7 +39,7 @@ export async function runGithub(options:{store:Store;source:GitHubSource;runner:
   const checkpoint=(cursor:object)=>store.checkpoint(jobId,lease.token,{...cursor,materials},600000);
   const errors:string[]=['活动时间取仓库创建、最近push和最新发布的实际时间；按左闭右开窗口过滤。采集为当前材料，不是历史时点快照；有数量上限，不能保证穷尽发现。','搜索按窗口内push发现候选，首次基线优先公开Star信号；关注仓库另行检查发布。可能漏掉仅发布而无窗口内push的未关注仓库。'],entries:any[]=[],completed=new Set<string>(lease.cursor.completed||[]),windows:CollectionWindow[]=[],filtered:Record<string,number>={};let rankings:any[]=[],weeklyRankings:any[]=[],rawSnapshot:string|null=null,modelFailures=0,retryAt:string|null=null;
   try {
-    const check=()=>{if(options.signal?.aborted)throw new RadarError('CANCELLED','任务已取消');};check();
+    const check=()=>{if(options.signal?.aborted)throw new RadarError('CANCELLED','任务已取消');if(topics.some(t=>!store.topics().some(current=>current.id===t.id&&current.enabled&&current.revision===t.revision)))throw new RadarError('TOPIC_CHANGED','主题版本已变化，停止旧批次');};check();
     for(const topic of (includeSection('projects')?topics:[])){const window=collectionWindow(batch,topic.id,topic.revision,store.lastConfirmedWindow(topic.id,topic.revision,recipient));windows.push(window);
       if(window.mode==='baseline_7d')errors.push(topic.name+'：首次7日基线（该订阅版本尚无已确认真实投递），不是本时段新增');
       else if(Date.parse(window.previousEndAt!)<Date.parse(batch.startAt))errors.push(topic.name+'：历史存在漏跑，本次仅处理最近时段，未补齐缺失时段');
@@ -71,7 +74,7 @@ export async function runGithub(options:{store:Store;source:GitHubSource;runner:
             if(activity.reason==='unknown_activity'&&!store.item(collected.item.key))store.capture(collected.item,collected.evidence);
             store.log('github_window_skip',{jobId,key:collected.item.key,topicId:topic.id,...activity,materialRequestsSkipped:true});continue;
           }
-          const captured=store.capture(collected.item,collected.evidence),evidence=store.evidence(collected.item.key).filter(e=>captured.evidenceIds.includes(e.id!));
+          check();const captured=store.capture(collected.item,collected.evidence),evidence=store.evidence(collected.item.key).filter(e=>captured.evidenceIds.includes(e.id!));
           materials[repo]={fingerprint:captured.fingerprint,evidenceIds:captured.evidenceIds,warnings:collected.warnings};
           checkpoint({stage:'reading',completed:[...completed],repo,topicId:topic.id});
           errors.push(...collected.warnings.map(w=>repo+'：'+w));
@@ -80,7 +83,7 @@ export async function runGithub(options:{store:Store;source:GitHubSource;runner:
           if(store.alreadyRecommended(collected.item.key)){errors.push(repo+'：内容未变化，已推荐或已有待投递记录；日榜仍保留');completed.add(topic.id+':'+collected.item.key);continue;}
           const cursorKey=topic.id+':'+collected.item.key+':'+captured.fingerprint;
           let assessment=completed.has(cursorKey)?store.assessments(topic.id).find(a=>a.itemKey===collected.item.key&&a.topicRevision===topic.revision&&a.itemFingerprint===captured.fingerprint&&a.readEvidenceIds.every(id=>evidence.some(e=>e.id===id))):null;
-          if(!assessment){try{assessment=await runner.assess(topic,collected.item,evidence,options.signal);store.saveAssessment(topic.id,assessment);}catch(e){modelFailures++;throw e;}}
+          if(!assessment){try{const startedAt=now(),snapshot=store.readingSnapshot(collected.item.key),bundle=materialPrompt(topic,collected.item,evidence);assessment=await runner.assess(topic,collected.item,evidence,options.signal);check();if(options.freezeDelivery===false){assessment=tracedAssessment(assessment,collected.item,bundle,snapshot,startedAt);store.saveArchivedAssessment(topic.id,topic.revision,snapshot,assessment);}else store.saveAssessment(topic.id,assessment);}catch(e){modelFailures++;throw e;}}
           completed.add(cursorKey);entries.push({item:collected.item,evidence,assessment});
           store.log('github_item',{key:collected.item.key,change:captured.change,topicId:topic.id});
           checkpoint({stage:'reading',completed:[...completed],repo,topicId:topic.id});
@@ -98,9 +101,9 @@ export async function runGithub(options:{store:Store;source:GitHubSource;runner:
     const digest=renderDigest({batch,entries:selected,rankings,weeklyRankings,previousRankings:previous,warnings:errors,simulation:runner.name==='fixture',collectionWindows:windows,verification:options.verification,mailTemplate:options.mailTemplate});
     const id=deliveryKey(recipient,batch),needsValidation=modelFailures>0||windows.some(window=>!window.completed)||(includeSection('daily')&&!rankings.length)||(!digest.simulation&&!digest.contentReady);
     mkdirSync(options.outputDir,{recursive:true});const path=resolve(options.outputDir,`${batch.date}-${batch.slot.replace(':','')}.html`);writeFileSync(path,digest.html);
-    if(!needsValidation)store.prepareDelivery(id,'email',recipient,JSON.stringify(digest),selected.map(e=>e.item.key));
+    if(!needsValidation&&options.freezeDelivery!==false)store.prepareDelivery(id,'email',recipient,JSON.stringify(digest),selected.map(e=>e.item.key));
     checkpoint({stage:needsValidation?'needs_validation':'prepared',completed:[...completed],preview:path,rawSnapshot,errors,retryAt});
     store.finish(jobId,lease.token,needsValidation?'failed':'done');
-    return {jobId,state:needsValidation?'needs_validation':'prepared',preview:path,deliveryId:needsValidation?null:id,selected:new Set(selected.map(e=>e.item.key)).size,selectedLimit,ranked:rankings.length,attempted,totalBudget,filtered,collectionWindows:windows,retryAt,errors,simulation:digest.simulation};
+    return {jobId,state:needsValidation?'needs_validation':'prepared',preview:path,deliveryId:needsValidation||options.freezeDelivery===false?null:id,selected:new Set(selected.map(e=>e.item.key)).size,selectedLimit,ranked:rankings.length,attempted,totalBudget,filtered,collectionWindows:windows,retryAt,errors,simulation:digest.simulation,...(options.freezeDelivery===false?{digest,itemKeys:selected.map(e=>e.item.key)}:{})};
   }catch(e){try{store.finish(jobId,lease.token,(e as RadarError).code==='CANCELLED'?'cancelled':'failed');}catch{}throw e;}
 }

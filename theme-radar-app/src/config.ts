@@ -6,9 +6,13 @@ import {configureNetwork,proxyUrl} from './network.ts';
 import {isEmailAddress} from './email-address.ts';
 import {operatorUrl} from './operator-url.ts';
 export const APP_ROOT = resolve(dirname(fileURLToPath(import.meta.url)),'..');
-export function loadConfig(file = process.env.THEME_RADAR_CONFIG || resolve(APP_ROOT,'config.local.json')) {
+export function configFilePath(file=process.env.THEME_RADAR_CONFIG,appRoot=APP_ROOT){return resolve(file||resolve(appRoot,'config.local.json'));}
+export function loadConfig(file?:string) {
+  const explicit=file||process.env.THEME_RADAR_CONFIG;file=configFilePath(file);
+  if(explicit&&!existsSync(file))throw new RadarError('CONFIG_NOT_FOUND','指定的配置文件不存在；请先用bootstrap configure创建，不会改用另一份默认账本');
   const defaults = JSON.parse(readFileSync(resolve(APP_ROOT,'config.example.json'),'utf8'));
-  const local = existsSync(file)?JSON.parse(readFileSync(file,'utf8')):{};
+  let local:any={};try{if(existsSync(file))local=JSON.parse(readFileSync(file,'utf8'));}catch{throw new RadarError('INVALID_CONFIG','无法读取配置JSON；请检查文件格式和权限，原文件未覆盖');}
+  if(!local||typeof local!=='object'||Array.isArray(local))throw new RadarError('INVALID_CONFIG','配置JSON需要对象；原文件未覆盖');
   const config = {...defaults,...local,limits:{...defaults.limits,...local.limits},email:{...defaults.email,...local.email},runners:{...defaults.runners,...local.runners},accounts:{...defaults.accounts,...local.accounts},bilibili:{...defaults.bilibili,...local.bilibili},xiaohongshu:{...defaults.xiaohongshu,...local.xiaohongshu}};
   config.operatorUrl=operatorUrl(config.operatorUrl);
   if(config.timezone!=='Asia/Shanghai'||JSON.stringify(config.sendTimes)!==JSON.stringify(['09:00','18:00']))throw new RadarError('BASELINE_MISMATCH','时区与双时段配置无效');

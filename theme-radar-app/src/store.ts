@@ -170,7 +170,7 @@ export class Store {
     if(!result.changes)throw new RadarError('LEASE_LOST','不能提交过期运行结果');
   }
   job(id:string){return this.db.prepare('SELECT * FROM jobs WHERE id=?').get(id);}
-  prepareDelivery(id:string,channel:string,recipient:string,body:string,itemKeys:string[]=[]){
+  prepareDelivery(id:string,channel:string,recipient:string,body:string,itemKeys:string[]=[],commit?:()=>void){
     const fingerprint=hash(body);return this.tx(()=>{const old=this.delivery(id);if(old){if(old.body_hash!==fingerprint||old.channel!==channel||old.recipient!==recipient)throw new RadarError('BATCH_EXISTS','同一批次已有不同正文或目标，须核对原记录');
       const frozen=this.deliveryItems(id);if(JSON.stringify(frozen.map(r=>r.item_key).sort())!==JSON.stringify([...new Set(itemKeys)].sort()))throw new RadarError('RESERVATION_CONFLICT','批次推荐清单已经冻结，不能追加或替换内容');
       if(!['failed','cancelled','bounced'].includes(old.state))this.restoreReservations(id);return {...old,duplicate:true};}
@@ -178,7 +178,7 @@ export class Store {
       if(quotaDate){const quota=this.dailyQuota(quotaDate);for(const platform of ['github','bilibili','xiaohongshu']){const requested=[...new Set(itemKeys)].filter(key=>this.item(key)?.platform===platform).length;if(requested>quota.platforms[platform].remaining)throw new RadarError('DAILY_QUOTA','该平台当日精选配额不足；待投递和待核对内容也占用配额');}}
       this.db.prepare('INSERT INTO deliveries VALUES(?,?,?,?,?,?,?,?)').run(id,channel,recipient,'prepared',fingerprint,body,null,now());
       for(const key of new Set(itemKeys)){const current=this.fingerprint(key);if(!current)throw new RadarError('NOT_FOUND','推荐内容不存在');this.db.prepare('INSERT INTO delivery_items VALUES(?,?,?)').run(id,key,current);}
-      this.restoreReservations(id);return this.delivery(id);});
+      this.restoreReservations(id);commit?.();return this.delivery(id);});
   }
   delivery(id:string){return this.db.prepare('SELECT * FROM deliveries WHERE id=?').get(id) as any;}
   deliveries(){return this.db.prepare('SELECT id,channel,recipient,state,body_hash,updated_at FROM deliveries ORDER BY updated_at DESC,rowid DESC LIMIT 50').all();}
@@ -188,6 +188,7 @@ export class Store {
     if(channel!=='email'||!isEmailAddress(recipient))return null;
     let digest:any;try{digest=JSON.parse(body);if(digest?.simulation===true||digest?.verification===true)return null;}catch{}
     if(digest?.kind==='bilibili-interest-manual'&&/^bilibili-interest:[a-f0-9-]{36}$/.test(id)&&id==='bilibili-interest:'+digest.runId){batchAt(digest.attemptDate,'09:00');return digest.attemptDate;}
+    if(digest?.kind==='automation-digest'&&id==='automation-mail:'+hash(digest.runId)){batchAt(digest.attemptDate,'09:00');return digest.attemptDate;}
     if(!id.startsWith(recipient.toLowerCase()+':'))return null;
     const match=/^(\d{4}-\d{2}-\d{2}):(09:00|18:00):[a-z][a-z0-9-]{0,60}$/.exec(id.slice(recipient.length+1));if(!match)return null;
     batchAt(match[1],match[2]);return match[1];

@@ -7,7 +7,7 @@
 ```sh
 git remote add origin <你创建的仓库地址>
 git push -u origin main
-git push origin v0.1.0-beta.2
+git push origin v0.1.0-beta.12
 ```
 
 准备目录已初始化Git并提交/tag时可直接采用上述步骤；否则先git init、git add和git commit。不要在命令中放令牌。GitHub Actions配置已随源码提供，首次push后检查真实CI结果；本地测试不能代替托管CI运行。
