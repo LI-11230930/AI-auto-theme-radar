@@ -5,7 +5,7 @@
   const main = document.querySelector('main');
   const pages = {}, definitions = [
     ['workbench','开始运行','◎'],['preferences','兴趣主题','◇'],['email-settings','邮件内容','✉'],
-    ['history','运行记录','◷'],['connections','平台连接','⇄'],['advanced','高级工具','⋯']
+    ['ideas','开发灵感','✧'],['history','运行记录','◷'],['connections','平台连接','⇄'],['advanced','高级工具','⋯']
   ];
   const sidebar = document.createElement('aside'); sidebar.className = 'wb-sidebar'; sidebar.setAttribute('aria-label','工作台目录');
   sidebar.innerHTML = '<div class="wb-brand"><span class="wb-logo">◎</span><div>主题雷达<small>THEME RADAR</small></div></div><nav class="wb-nav" aria-label="主目录"></nav><div class="wb-sidebar-footer">本地工作空间<br>你的配置与阅读档案保存在本机。</div>';
@@ -37,6 +37,7 @@
   pages.connections.innerHTML = '<div class="wb-page-title"><h2>平台连接</h2><p class="muted">B站登录在本机保存；Agent 模型和 Outlook 连接由你选用的 Agent 提供。</p></div><section class="panel"><h2>Agent 与 Outlook</h2><p>在所选 Agent 中连接主题雷达 MCP 和 Outlook。运行时，Agent 会核对实际发件账号，再按计划发信。</p><p class="muted">配置片段与安装说明保留在高级工具中。无需在这个网页填写 Outlook 密码。</p><a class="btn" href="/help/install" target="_blank" rel="noopener">查看接入说明</a></section>';
   pages.advanced.innerHTML = '<div class="wb-page-title"><span class="eyebrow">TOOL LIBRARY</span><h2>需要时，再打开工具。</h2><p class="wb-advanced-note">先选用途，再展开具体操作。采集、档案、邮件与维护各在自己的位置。</p></div><div class="wb-tool-layout"><nav class="wb-tool-nav" aria-label="高级工具目录"></nav><div class="wb-tool-content"></div></div>';
   const place = (element, page) => { if (element) pages[page].append(element); };
+  place($('inspiration'),'ideas');
   place($('bilibili-login'),'connections'); place($('setup'),'connections');
   for (const element of [...main.children]) {
     if (element === header || element.classList.contains('wb-page')) continue;
@@ -84,12 +85,12 @@
   for(const group of toolGroups){const section=document.createElement('section');section.id='advanced-'+group.id;section.className='wb-tool-group';section.dataset.toolGroup=group.id;section.innerHTML='<div class="wb-tool-heading"><span>'+group.icon+'</span><div><h3>'+group.name+'</h3><p>'+group.note+'</p></div></div>';group.element=section;toolContent.append(section);const link=document.createElement('a');link.href='#'+section.id;link.innerHTML='<span>'+group.icon+'</span>'+group.name;pages.advanced.querySelector('.wb-tool-nav').append(link);}
   for(const panel of toolPanels){const heading=panel.querySelector('h2'),title=heading?.textContent||'更多操作';let group=toolGroups.find(g=>g.ids.includes(panel.id));if(!group)group=/邮件|投递|预览/.test(title)?toolGroups[2]:/主题/.test(title)?toolGroups[3]:/检索/.test(title)?toolGroups[1]:toolGroups[4];const wrapper=document.createElement('details');wrapper.className='wb-tool';const summary=document.createElement('summary'),name=document.createElement('strong'),description=document.createElement('small');name.textContent=title;description.textContent=panel.querySelector('p')?.textContent?.slice(0,90)||'展开查看操作与当前状态';summary.append(name,description);wrapper.append(summary,panel);group.element.append(wrapper);wrapper.addEventListener('toggle',()=>{if(wrapper.open)for(const other of toolContent.querySelectorAll('details.wb-tool'))if(other!==wrapper)other.open=false;});}
   for(const node of [...pages.advanced.children])if(node!==pages.advanced.querySelector('.wb-page-title')&&node!==pages.advanced.querySelector('.wb-tool-layout'))node.remove();
-  const destinations = {'workbench':'workbench','preferences':'preferences','email-settings':'email-settings','history':'history','connections':'connections','advanced':'advanced'};
+  const destinations = {'workbench':'workbench','preferences':'preferences','email-settings':'email-settings','ideas':'ideas','history':'history','connections':'connections','advanced':'advanced'};
   for (const page of Object.values(pages)) for (const element of page.querySelectorAll('[id]')) destinations[element.id] = page.id;
   function route() {
     const id = location.hash.slice(1) || 'workbench', selected = destinations[id] || 'workbench';
-    const pageTitles={workbench:'我的主题雷达',preferences:'兴趣主题','email-settings':'邮件内容',history:'运行记录',connections:'平台连接',advanced:'工具目录'};
-    const pageNotes={workbench:'GitHub 每日简报，B站持续阅读。选择兴趣，让 Agent 把有价值的内容送到邮箱。',preferences:'按开发目标订阅，用反馈调整后续阅读。','email-settings':'链接、中文介绍、Star与简短示意，由你决定保留哪些。',history:'每轮读到了什么，哪些内容已送达。',connections:'登录B站，并检查Agent与邮箱连接。',advanced:'按用途选择工具；操作面板按需展开。'};
+    const pageTitles={workbench:'我的主题雷达',preferences:'兴趣主题','email-settings':'邮件内容',ideas:'开发灵感',history:'运行记录',connections:'平台连接',advanced:'工具目录'};
+    const pageNotes={workbench:'GitHub 每日简报，B站持续阅读。选择兴趣，让 Agent 把有价值的内容送到邮箱。',preferences:'按开发目标订阅，用反馈调整后续阅读。','email-settings':'链接、中文介绍、Star与简短示意，由你决定保留哪些。',ideas:'从明确的视频与仓库关联，走到一个可验证的小方案。',history:'每轮读到了什么，哪些内容已送达。',connections:'登录B站，并检查Agent与邮箱连接。',advanced:'按用途选择工具；操作面板按需展开。'};
     header.querySelector('h1').textContent=pageTitles[selected];header.querySelector('p').textContent=pageNotes[selected];
     for (const [name,page] of Object.entries(pages)) page.hidden = name !== selected;
     for (const link of sidebar.querySelectorAll('nav a')) { if (link.hash === '#'+selected) link.setAttribute('aria-current','page'); else link.removeAttribute('aria-current'); }

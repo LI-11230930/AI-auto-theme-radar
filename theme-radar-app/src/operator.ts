@@ -17,6 +17,7 @@ import {BilibiliSource} from './bilibili.ts';
 import {readConfiguredBilibili} from './bilibili-reading.ts';
 import {requireText} from './model.ts';
 import {libraryView} from './library.ts';
+import {inspirationView,inspirationCard,inspirationMarkdown} from './inspiration.ts';
 import {importBrowserSubtitles} from './browser-subtitles.ts';
 import {archivedAnalysis} from './archive-reading.ts';
 import {discoverTopic} from './discovery.ts';
@@ -82,6 +83,9 @@ export async function startOperator(port?:number,automationDependencies?:any){
       if(req.method==='GET'&&url.pathname==='/assets/outbox.js'){res.writeHead(200,{'Content-Type':'application/javascript; charset=utf-8'});res.end(readFileSync(resolve(APP_ROOT,'operator-outbox.js')));return;}
       if(req.method==='GET'&&url.pathname==='/preview/automation'){const id=url.searchParams.get('id')||'';if(!/^[a-f0-9]{64}$/.test(id))throw new RadarError('INVALID_INPUT','预览ID无效');const file=resolve(config.dataDir,'automation-previews',id+'.html');if(!existsSync(file))throw new RadarError('NOT_FOUND','预览不存在');res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"});res.end(readFileSync(file));return;}
       if(req.method==='GET'&&url.pathname==='/api/archive'){reply(200,{items:store.search(url.searchParams.get('q')||'',{platform:url.searchParams.get('platform')||undefined,authorId:url.searchParams.get('authorId')||undefined,topicId:url.searchParams.get('topicId')||undefined,from:url.searchParams.get('from')||undefined,to:url.searchParams.get('to')||undefined,limit:url.searchParams.has('limit')?Number(url.searchParams.get('limit')):30}),dateScope:'source publishedAt, [from,to); missing dates excluded when filtering'});return;}
+      if(req.method==='GET'&&url.pathname==='/assets/inspiration.js'){res.writeHead(200,{'Content-Type':'application/javascript; charset=utf-8'});res.end(readFileSync(resolve(APP_ROOT,'operator-inspiration.js')));return;}
+      if(req.method==='GET'&&url.pathname==='/api/inspiration'){reply(200,inspirationView(store,{topicId:url.searchParams.get('topicId')||undefined}));return;}
+      if(req.method==='GET'&&url.pathname==='/api/inspiration/markdown'){const card=inspirationCard(store,url.searchParams.get('id')||'');res.writeHead(200,{'Content-Type':'text/plain; charset=utf-8','Content-Disposition':'attachment; filename="theme-radar-idea.md"'});res.end(inspirationMarkdown(card));return;}
       if(req.method==='GET'&&url.pathname==='/api/library'){reply(200,libraryView(store,{topicId:url.searchParams.get('topicId')||undefined},config.recipient));return;}
       if(req.method==='GET'&&url.pathname==='/api/digest/candidates'){reply(200,digestCandidates(store,{platform:url.searchParams.get('platform')||undefined,topicId:url.searchParams.get('topicId')||undefined},config.recipient));return;}
       if(req.method==='GET'&&url.pathname==='/api/digest/bilibili-preview'){reply(200,renderBilibiliBrief(store,undefined,{template:loadMailTemplate(config.dataDir)}));return;}
