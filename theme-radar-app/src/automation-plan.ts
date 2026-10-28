@@ -4,12 +4,12 @@ import {isEmailAddress} from './email-address.ts';
 import {beijingDate} from './time.ts';
 import type {Store} from './store.ts';
 export const automationAgents=['DSH','WorkBuddy','Codex','TRAE'];
-export type AutomationPlan={id:string;name:string;enabled:boolean;agent:string;execution:'attached'|'background';topicIds:string[];platforms:('github'|'bilibili')[];schedule:{kind:'manual'|'daily'|'interval';times?:string[];weekdays?:number[];minutes?:number};delivery:'draft'|'smtp'|'host';recipient:string|null;from:string|null;sendApproved:boolean;maxMessagesPerDay:number;mailBudgetScope?:'recipient'|'plan';readLimit:number;githubReadLimit:number;subject:string;revision:number;createdAt:string;updatedAt:string};
+export type AutomationPlan={id:string;name:string;enabled:boolean;agent:string;execution:'attached'|'background';topicIds:string[];platforms:('github'|'bilibili')[];schedule:{kind:'manual'|'daily'|'interval';times?:string[];weekdays?:number[];minutes?:number};delivery:'draft'|'smtp'|'host';recipient:string|null;from:string|null;sendApproved:boolean;maxMessagesPerDay:number;mailBudgetScope?:'recipient'|'plan';readLimit:number;githubReadLimit:number;subject:string;inspiration?:{enabled:boolean;maxCards:number;maxRepositoryReads:number};revision:number;createdAt:string;updatedAt:string};
 export function plans(store:Store):AutomationPlan[]{return store.db.prepare("SELECT data FROM jobs WHERE id LIKE 'automation-plan:%' ORDER BY id").all().map((r:any)=>JSON.parse(r.data));}
 export function planById(store:Store,id:string){return plans(store).find(p=>p.id===id);}
 export function validatePlan(input:any,store:Store){
  if(!input||typeof input!=='object'||Array.isArray(input))throw new RadarError('INVALID_PLAN','计划需要对象');
- const allowed=['id','name','enabled','agent','execution','topicIds','platforms','schedule','delivery','recipient','from','sendApproved','maxMessagesPerDay','mailBudgetScope','readLimit','githubReadLimit','subject','revision','createdAt','updatedAt'];
+ const allowed=['id','name','enabled','agent','execution','topicIds','platforms','schedule','delivery','recipient','from','sendApproved','maxMessagesPerDay','mailBudgetScope','readLimit','githubReadLimit','subject','inspiration','revision','createdAt','updatedAt'];
  if(Object.keys(input).some(k=>!allowed.includes(k)))throw new RadarError('INVALID_PLAN','计划含未知字段');
  if(typeof input.id!=='string'||! /^[a-zA-Z0-9_-]{1,80}$/.test(input.id))throw new RadarError('INVALID_PLAN','计划ID使用1至80个字母、数字、下划线或短横线');
  requireText(input.name,'计划名称',120);
@@ -18,6 +18,7 @@ export function validatePlan(input:any,store:Store){
  if(input.execution==='background'&&input.agent==='WorkBuddy')throw new RadarError('INTERACTIVE_HOST','WorkBuddy使用当前会话执行，尚无已验证后台CLI；请选择交互模式');
  if(!Array.isArray(input.topicIds)||!input.topicIds.length||input.topicIds.length>20||new Set(input.topicIds).size!==input.topicIds.length||input.topicIds.some((id:any)=>typeof id!=='string'||!store.topics().some(t=>t.id===id&&(!input.enabled||t.enabled))))throw new RadarError('TOPIC_REQUIRED','选择1至20个已启用主题；停用计划可保留原主题');
  if(!Array.isArray(input.platforms)||!input.platforms.length||new Set(input.platforms).size!==input.platforms.length||input.platforms.some((p:any)=>!['github','bilibili'].includes(p)))throw new RadarError('INVALID_PLAN','请选择B站或GitHub');
+ if(input.inspiration!==undefined){const i=input.inspiration;if(!i||typeof i!=='object'||Array.isArray(i)||Object.keys(i).length!==3||Object.keys(i).some(k=>!['enabled','maxCards','maxRepositoryReads'].includes(k))||typeof i.enabled!=='boolean'||!Number.isSafeInteger(i.maxCards)||i.maxCards<1||i.maxCards>3||!Number.isSafeInteger(i.maxRepositoryReads)||i.maxRepositoryReads<0||i.maxRepositoryReads>3||i.enabled&&!input.platforms.includes('bilibili'))throw new RadarError('INVALID_INSPIRATION','灵感跟进需B站，卡片1至3、新增仓库读取0至3，且明确设置开关');}
  for(const platform of input.platforms)if(!input.topicIds.some((id:string)=>store.topics().some(t=>t.id===id&&t.platforms.includes(platform))))throw new RadarError('TOPIC_REQUIRED','选定平台缺少对应主题');
  for(const [key,max] of [['readLimit',3],['githubReadLimit',20],['maxMessagesPerDay',24]] as const)if(!Number.isSafeInteger(input[key])||input[key]<1||input[key]>max)throw new RadarError('INVALID_BUDGET',`${key}需要1至${max}`);
  if(input.platforms.includes('bilibili')&&input.topicIds.some((id:string)=>store.topics().some(t=>t.id===id&&t.platforms.includes('bilibili')&&t.bilibiliDiscovery!=='interests')))throw new RadarError('INVALID_PLAN','自动计划的B站主题目前使用兴趣发现；作者/关键词订阅仍可单独运行');

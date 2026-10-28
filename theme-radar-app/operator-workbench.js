@@ -25,7 +25,7 @@
     <fieldset><legend>阅读平台</legend><div class="wb-checkboxes"><label class="wb-check"><input id="quick-bilibili" type="checkbox" checked>B站</label><label class="wb-check"><input id="quick-github" type="checkbox" checked>GitHub</label></div></fieldset>
     <fieldset><legend>关注的主题</legend><div id="quick-topics" class="wb-topic-options"></div><p class="wb-help">在「兴趣主题」中添加或调整关键词。</p></fieldset>
     <div class="wb-form-row"><label>Outlook 发件邮箱<input id="quick-from" type="email" autocomplete="email" placeholder="已在 Agent 中连接的邮箱"></label><label>接收邮箱<input id="quick-recipient" type="email" autocomplete="email" placeholder="分享给自己的邮箱"></label></div>
-    <label class="wb-check"><input id="quick-approved" type="checkbox"><span>允许主动运行或已开启的平台计划，通过Outlook发送汇总。<br><small class="wb-help">每轮最多1次发送尝试、每天最多2次；失败或结果未知不重发。</small></span></label>
+    <label class="wb-check"><input id="quick-inspiration" type="checkbox">从B站精选整理开发灵感</label><p class="wb-help">默认每轮最多1张卡、补读1个明确仓库；卡片留在独立目录，跟进失败不影响正常汇总邮件。</p><label class="wb-check"><input id="quick-approved" type="checkbox"><span>允许主动运行或已开启的平台计划，通过Outlook发送汇总。<br><small class="wb-help">每轮最多1次发送尝试、每天最多2次；失败或结果未知不重发。</small></span></label>
     <div class="wb-actions"><button type="submit" class="primary">保存配置</button><button type="button" id="quick-copy">复制 Agent 运行指令</button><button type="button" id="quick-start" disabled>开始一轮</button></div>
     <p id="quick-online" class="wb-help">保存后，把运行指令发给所选 Agent，它会自主完成阅读与投递。</p><div id="quick-message" class="wb-alert" role="status"></div>
     </form><details><summary>查看运行指令</summary><textarea id="quick-prompt" rows="12" readonly aria-label="运行指令"></textarea></details></section>
@@ -113,7 +113,7 @@
   function fill(plan) {
     saved=plan||null; $('quick-agent').value=plan?.agent||'Codex';$('quick-subject').value=plan?.subject||'主题雷达｜{date} {time}';
     for(const p of ['bilibili','github'])$('quick-'+p).checked=plan?plan.platforms.includes(p):true;
-    $('quick-from').value=plan?.from||'';$('quick-recipient').value=plan?.recipient||'';$('quick-approved').checked=!!(plan?.sendApproved&&plan?.delivery==='host');
+    $('quick-from').value=plan?.from||'';$('quick-recipient').value=plan?.recipient||'';$('quick-approved').checked=!!(plan?.sendApproved&&plan?.delivery==='host');$('quick-inspiration').checked=plan?.inspiration?.enabled===true;
     renderTopicOptions(plan?.topicIds||core.eligibleTopics(state.topics||[],platforms()).map(t=>t.id));dirty=false;updateSummary();
   }
   function updateSummary() {
@@ -124,11 +124,12 @@
     $('quick-online').textContent=online?'所选 Agent 最近已连接，可以开始一轮；它仍需持续处理任务。':'把运行指令发给所选 Agent，由它发起并自主完成本轮。网页不会唤醒关闭的 Agent。';
   }
   function renderRuns(target,runs) {
-    const labels={draft_ready:'草稿已完成',awaiting_host_mail:'等待 Outlook 投递',awaiting_model:'Agent 正在阅读',no_selection:'本轮没有精选',no_readable_material:'没有可读正文',incomplete_reading:'部分处理未完成',failed:'运行未完成',cancelled:'已取消',github:'正在阅读 GitHub',bilibili:'正在阅读 B站',queued:'准备开始'};
+    const labels={draft_ready:'草稿已完成',awaiting_host_mail:'等待 Outlook 投递',awaiting_model:'Agent 正在阅读',no_selection:'本轮没有精选',no_readable_material:'没有可读正文',incomplete_reading:'部分处理未完成',failed:'运行未完成',cancelled:'已取消',github:'正在阅读 GitHub',bilibili:'正在阅读 B站',queued:'准备开始',inspiration:'正在整理开发灵感'};
     const delivery={submitted:'邮件已提交',sent_confirmed:'邮件已确认送达',uncertain:'邮件结果待核对，禁止重发',submitting:'邮件正在提交',prepared:'邮件等待领取',failed:'邮件发送失败'};
     const rows=runs.map(run=>{const card=document.createElement('div');card.className='wb-list-row';const title=document.createElement('h3');title.textContent=delivery[run.deliveryState]||labels[run.stage]||'处理中';const p=document.createElement('p');p.textContent=new Date(run.startedAt).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})+' · '+(run.planId==='personal-radar'?'我的主题雷达':run.planId.startsWith('verify-')?'历史验收记录':'阅读任务');card.append(title,p);
       for(const row of run.results||[]){const line=document.createElement('p');line.textContent=row.platform==='bilibili'?`B站 · 已判断 ${row.counts?.assessed||0} 条，精选 ${row.counts?.selected||0} 条${(row.counts?.unavailableBody||0)+(row.counts?.insufficientBody||0)?`，本轮${run.planId==='bilibili-stream'?'留待恢复':'未取得足够正文'} ${(row.counts?.unavailableBody||0)+(row.counts?.insufficientBody||0)} 条`:''}${row.counts?.failed?`，处理失败 ${row.counts.failed} 条`:''}`:`GitHub · 精选 ${row.selected||0} 个项目`;card.append(line);}
       if(run.error){const error=document.createElement('p');error.textContent=run.error.message;card.append(error);}
+      if(run.inspiration){const extra=document.createElement('p');extra.textContent=`开发灵感 · 新建 ${run.inspiration.newCards||0}，复用 ${run.inspiration.reusedCards||0}，未形成方案 ${run.inspiration.declined||0}，失败 ${run.inspiration.failed||0}`;card.append(extra);const ideas=document.createElement('a');ideas.href='#ideas';ideas.textContent='查看灵感卡 →';card.append(ideas);}
       if(run.absolutePreview){const link=document.createElement('a');link.href=run.absolutePreview;link.textContent='查看汇总草稿 ↗';link.target='_blank';link.rel='noopener';card.append(link);}return card;});
     target.replaceChildren(...rows);if(!rows.length){const empty=document.createElement('div');empty.className='wb-empty';empty.textContent='还没有日常运行记录。配置保存后，交给 Agent 开始第一轮。';target.append(empty);}
   }
@@ -143,7 +144,7 @@
     const everyday=(report.runs||[]).filter(r=>!r.planId.startsWith('verify-'));renderRuns($('quick-latest'),everyday.slice(0,1));renderRuns($('quick-history'),everyday.slice(0,12));renderTopicList();
   }
   $('quick-form').addEventListener('input',()=>{dirty=true;updateSummary();});for(const p of ['bilibili','github'])$('quick-'+p).onchange=()=>renderTopicOptions();
-  $('quick-form').onsubmit=async event=>{event.preventDefault();try{const plan=core.manualPlan({agent:$('quick-agent').value,subject:$('quick-subject').value,platforms:platforms(),topicIds:[...$('quick-topics').querySelectorAll('input:checked')].map(x=>x.value),from:$('quick-from').value.trim(),recipient:$('quick-recipient').value.trim(),sendApproved:$('quick-approved').checked});
+  $('quick-form').onsubmit=async event=>{event.preventDefault();try{const plan=core.manualPlan({agent:$('quick-agent').value,subject:$('quick-subject').value,platforms:platforms(),topicIds:[...$('quick-topics').querySelectorAll('input:checked')].map(x=>x.value),from:$('quick-from').value.trim(),recipient:$('quick-recipient').value.trim(),sendApproved:$('quick-approved').checked,inspiration:$('quick-inspiration').checked||saved?.inspiration?{enabled:$('quick-inspiration').checked,maxCards:saved?.inspiration?.maxCards??1,maxRepositoryReads:saved?.inspiration?.maxRepositoryReads??1}:undefined});
     const valid=core.eligibleTopics(state.topics,plan.platforms);for(const p of plan.platforms)if(!valid.some(t=>plan.topicIds.includes(t.id)&&t.platforms.includes(p)))throw Error('所选平台需要至少一个对应主题。');
     const result=await post('/api/automation/save',{plan,expectedRevision:saved?.revision||0});fill(result);msg('quick-message','统一配置已保存，并同步到已创建的平台计划；各自开关和频率保留。可复制指令到所选Agent手动运行。');await refresh();await refreshPlatforms();document.dispatchEvent(new Event('radar-state-changed'));
     }catch(error){msg('quick-message',error.message,true);}};

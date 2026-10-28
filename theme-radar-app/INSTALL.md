@@ -85,3 +85,5 @@ DSH项目web入口已实测直接调用status与兴趣轮次；WorkBuddy已实�
 ## 开发灵感卡
 
 侧边目录“开发灵感”准备当前Agent指令；需要新增radar_inspiration_list/prepare/submit/cancel四个MCP工具，升级后重连刷新工具列表。两来源实际正文阅读、租约提交和Markdown导出见[指南](../docs/INSPIRATION.md)。
+
+可选灵感跟进（beta.22）：首页开关默认关闭。开启后由本轮所选Agent继续处理kind=inspiration-card任务，使用v1/r1局部材料引用，通过原automation_submit提交；optionalTask=true的失败只结束附加任务，继续同一轮。详见../docs/INSPIRATION.md。

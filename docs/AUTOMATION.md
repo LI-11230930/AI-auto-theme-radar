@@ -70,7 +70,7 @@ AGENT_OFFLINE表示交互会话尚未next连接；RUNNER_NOT_FOUND表示所选�
 
 ## 模型提交纠错
 
-当前模型任务的材料引用使用任务内m1、m2等编号，程序在任务内部绑定完整证据ID。不要引用其他任务编号或抄写长哈希。submit返回accepted=false、retryable=true时，只纠正原taskId和token，不开新轮次；最多两次纠正，第三次无效则结束。任务租约、宿主、计划版本、取消和档案快照校验保持生效。accepted=true也不代表邮件已发送。
+当前模型任务的材料引用使用任务内m1、m2等编号，程序在任务内部绑定完整证据ID。不要引用其他任务编号或抄写长哈希。submit返回accepted=false、retryable=true时，只纠正原taskId和token，不开新轮次；最多两次纠正，第三次无效则结束该任务。普通阅读任务失败会结束运行；可选灵感任务失败返回optionalTask=true时，继续处理同一runId，保留主邮件，不另开一轮。任务租约、宿主、计划版本、取消和档案快照校验保持生效。accepted=true也不代表邮件已发送。
 
 ## 平台独立入口
 
@@ -99,3 +99,7 @@ AGENT_OFFLINE表示交互会话尚未next连接；RUNNER_NOT_FOUND表示所选�
 工具隐藏输入细粒度公开仓库只读令牌，使用Windows当前用户加密保存到自己的dataDir/credentials，并把位置写入自己的config.local.json的github.credentialFile。它不验证GitHub服务器权限。本机保管期限默认7天，和GitHub服务器实际到期时间分开计算；不要把本机期限当作服务器响应。原配置和加密记录在本机dataDir备份，不随公开代码提交。
 
 MCP、CLI与服务启动时共用同一加载器，修改记录后重启服务并重连MCP。状态只返回加载来源、本机期限和是否需要重启，不暴露令牌、密文或文件路径。若显式保存的凭据不可读取、已过本机期限或无法解密，GitHub停止访问并显示处理方法；不隐式改为匿名额度。网页和B站配置界面仍可启动。没有配置凭据的新安装仍可按原规则使用匿名额度。外部环境变量按使用者显式设置保留。
+
+## 可选灵感跟进
+
+统一计划可配置`inspiration: {enabled: true, maxCards: 1, maxRepositoryReads: 1}`。需包含B站；旧配置可完全省略，保持关闭。每轮卡预算1–3，新仓库补读预算0–3，最多额外3分钟；只跟进本轮精选中的明确引用。首页配置同步到既有B站子计划，GitHub子计划关闭此项，开关/频率与投递额度保留。完整任务协议与失败隔离见[灵感卡指南](INSPIRATION.md)。

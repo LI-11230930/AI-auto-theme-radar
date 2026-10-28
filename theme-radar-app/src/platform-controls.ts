@@ -19,7 +19,7 @@ function derivedPlan(runtime:AutomationRuntime,platform:Platform,base:Automation
   enabled:enabled&&selected,agent:base.agent,execution:base.execution,platforms:[platform],
   topicIds:selected?ids:old?.topicIds||ids,schedule:old?.schedule||{kind:'manual'},
   delivery:base.delivery,from:base.from,recipient:base.recipient,sendApproved:base.sendApproved,
-  readLimit:base.readLimit,githubReadLimit:base.githubReadLimit,mailBudgetScope:'plan',
+  readLimit:base.readLimit,githubReadLimit:base.githubReadLimit,inspiration:base.inspiration?{...base.inspiration,enabled:base.inspiration.enabled&&platform==='bilibili'}:undefined,mailBudgetScope:'plan',
   maxMessagesPerDay:old?.maxMessagesPerDay||(platform==='github'?1:2),
   subject:old?.subject||(platform==='github'?'GitHub每日简报｜{date}':'B站阅读精选｜{date} {time}')};
 }

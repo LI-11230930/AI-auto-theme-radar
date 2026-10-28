@@ -29,3 +29,5 @@ GitHub可用radar_github_search/read取得少量项目，调用prepare/submit保
 ## 按需开发灵感
 
 四宿主均可用radar_inspiration_list寻找明确的视频—仓库关联，再prepare阅读所给材料、按schema提交submit；缺仓库正文先github_read明确repo。取消用cancel，租约10分钟。不会代替统一轮次、发信或创建定时。详见[灵感卡指南](../../docs/INSPIRATION.md)。
+
+可选灵感跟进（beta.22）：首页开关默认关闭。开启后由本轮所选Agent继续处理kind=inspiration-card任务，使用v1/r1局部材料引用，通过原automation_submit提交；optionalTask=true的失败只结束附加任务，继续同一轮。详见../../docs/INSPIRATION.md。
