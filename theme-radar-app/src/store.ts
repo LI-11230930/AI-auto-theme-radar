@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { hash, now, normalizeText, repoReferences, RadarError, validateCoverage, validateTopic, requireText,readableEvidence } from './model.ts';
 import type { Assessment, Evidence, Item, Topic, Ranking } from './model.ts';
+import {contentFingerprint,audienceFingerprint} from './content-fingerprint.ts';
 import {metricDelta} from './interaction-metrics.ts';
 import {sourceTimestamp} from './selection.ts';
 import {batchAt} from './time.ts';
@@ -68,32 +69,37 @@ export class Store {
     const currentEvidenceIds=evidences.map(e=>hash(`${item.key}:${e.kind}:${hash(e.text)}`));
     const storedItem:Item={...item,metadata:{...item.metadata,currentEvidenceIds}};
     delete storedItem.metadata.browserObservationBase;delete storedItem.metadata.browserObservationIds;
-    const fingerprint=hash(normalizeText(JSON.stringify({title:item.title,version:item.version,materials:evidences.map(e=>{
-      let text=e.text;
-      if(e.kind==='repository-metadata'){try{const meta=JSON.parse(text);for(const key of ['pushed_at','updated_at','created_at','stargazers_count','forks_count','watchers_count'])delete meta[key];text=JSON.stringify(meta);}catch{}}
-      return {kind:e.kind,text:normalizeText(text)};
-    }).sort((a,b)=>a.kind.localeCompare(b.kind)||a.text.localeCompare(b.text))})));
+    const computedFingerprint=contentFingerprint(item,evidences);
     return this.tx(()=>{
       guard?.();
       const old=this.db.prepare('SELECT body_hash,data FROM items WHERE key=?').get(item.key) as any;
+      const previous=old?JSON.parse(old.data):null,oldIds=previous?.metadata?.currentEvidenceIds;
+      const priorEvidence=item.platform==='bilibili'&&Array.isArray(oldIds)?[...new Set(oldIds)].filter(id=>typeof id==='string').map(id=>this.material(id)).filter((e):e is Evidence=>!!e&&e.itemKey===item.key):[];
+      const completePrior=Array.isArray(oldIds)&&oldIds.length>0&&priorEvidence.length===new Set(oldIds).size;
+      const preserveLegacy=item.platform==='bilibili'&&completePrior&&contentFingerprint(previous,priorEvidence)===computedFingerprint;
+      const fingerprint=preserveLegacy?old.body_hash:computedFingerprint;
+      const priorAudience=item.platform==='bilibili'&&completePrior?audienceFingerprint(priorEvidence):null,nextAudience=item.platform==='bilibili'?audienceFingerprint(evidences):null;
+
       if(item.platform==='bilibili'&&old?.body_hash===fingerprint){const previous=JSON.parse(old.data).metadata;if(previous?.browserObservationBase===fingerprint&&Array.isArray(previous.browserObservationIds)){storedItem.metadata.browserObservationBase=fingerprint;storedItem.metadata.browserObservationIds=previous.browserObservationIds;}}
       this.db.prepare('INSERT INTO items VALUES(?,?,?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET title=excluded.title,body_hash=excluded.body_hash,data=excluded.data,updated_at=excluded.updated_at').run(item.key,item.platform,item.externalId,item.title,fingerprint,JSON.stringify(storedItem),now());
       const ids=evidences.map(e=>{const bodyHash=hash(e.text);const id=hash(`${item.key}:${e.kind}:${bodyHash}`);this.db.prepare('INSERT OR IGNORE INTO evidence VALUES(?,?,?,?,?,?)').run(id,item.key,e.kind,bodyHash,e.text,JSON.stringify({...e,id,hash:bodyHash}));return id;});
       let change='unchanged';
       if(!old||old.body_hash!==fingerprint){const previous=old?JSON.parse(old.data):null;change=!old?'discovered':previous.version!==item.version?'version_changed':'content_changed';this.db.prepare('INSERT INTO events VALUES(?,?,?,?,?,?)').run(randomUUID(),item.key,change,old?.body_hash||null,fingerprint,now());}
+      const audienceChanged=priorAudience!==null&&nextAudience!==null&&priorAudience!==nextAudience;
+      if(audienceChanged)this.db.prepare('INSERT INTO events VALUES(?,?,?,?,?,?)').run(randomUUID(),item.key,'audience_sample_changed',priorAudience,nextAudience,now());
       const metrics=old?metricDelta(JSON.parse(old.data),storedItem):[];
       if(metrics.length){const eventId=randomUUID();this.db.prepare('INSERT INTO events VALUES(?,?,?,?,?,?)').run(eventId,item.key,'metrics_changed',hash(JSON.stringify(metrics.map(m=>({field:m.field,value:m.before})))),hash(JSON.stringify(metrics.map(m=>({field:m.field,value:m.after})))),now());this.log('metrics_changed',{eventId,itemKey:item.key,changes:metrics});}
       const refs=new Set(repoReferences([item.url,...evidences.map(e=>e.text)].join('\n')));
       if(item.platform==='github')refs.add(item.externalId.toLowerCase());
       for(const repo of refs){const group='github:'+repo;this.db.prepare('INSERT OR IGNORE INTO groups VALUES(?,?)').run(group,'明确引用同一GitHub仓库；保留独立来源');this.db.prepare('INSERT OR IGNORE INTO group_members VALUES(?,?)').run(group,item.key);}
-      return {key:item.key,evidenceIds:ids,change,fingerprint,metricsChanged:metrics.length>0};
+      return {key:item.key,evidenceIds:ids,change,fingerprint,metricsChanged:metrics.length>0,audienceChanged};
     });
   }
   item(key:string){const row=this.db.prepare('SELECT data FROM items WHERE key=?').get(key) as any;return row?JSON.parse(row.data):null;}
   itemChanges(key:string,limit=30){
     if(!Number.isInteger(limit)||limit<1||limit>50)throw new RadarError('INVALID_LIMIT','变化记录上限须为1至50');
     const rows=this.db.prepare('SELECT id,kind,old_hash,new_hash,created_at FROM events WHERE item_key=? ORDER BY rowid DESC LIMIT ?').all(key,limit+1) as any[];
-    const events=rows.slice(0,limit).map(row=>{if(row.kind!=='metrics_changed')return {...row,metricsOnly:false};const detail=this.db.prepare("SELECT data FROM logs WHERE event='metrics_changed' AND json_extract(data,'$.eventId')=? ORDER BY id DESC LIMIT 1").get(row.id) as any;return {...row,metricsOnly:true,changes:detail?JSON.parse(detail.data).changes:[],note:'仅是两次取得的互动计数差异，不代表正文新价值，也不触发再次推荐。'};});
+    const events=rows.slice(0,limit).map(row=>{if(row.kind==='audience_sample_changed')return {...row,metricsOnly:false,audienceOnly:true,note:'仅弹幕观察样本变化，不是视频正文新价值；阅读快照仍随实际材料更新。'};if(row.kind!=='metrics_changed')return {...row,metricsOnly:false};const detail=this.db.prepare("SELECT data FROM logs WHERE event='metrics_changed' AND json_extract(data,'$.eventId')=? ORDER BY id DESC LIMIT 1").get(row.id) as any;return {...row,metricsOnly:true,changes:detail?JSON.parse(detail.data).changes:[],note:'仅是两次取得的互动计数差异，不代表正文新价值，也不触发再次推荐。'};});
     return {events,limit,mayHaveMore:rows.length>limit,scope:'local_observations_only; historical unknown counts are not reconstructed'};
   }
   fingerprint(key:string){return (this.db.prepare('SELECT body_hash FROM items WHERE key=?').get(key) as any)?.body_hash||null;}

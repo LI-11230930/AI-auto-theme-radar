@@ -1,5 +1,5 @@
 {
-  "version": "0.1.0-beta.23",
+  "version": "0.1.0-beta.24",
   "scope": "public beta source; no credentials or runtime data; see documented capability boundaries",
   "files": [
     {
@@ -124,8 +124,8 @@
     },
     {
       "path": "operator-reading.js",
-      "bytes": 9201,
-      "sha256": "76445162a4a1e8343076636d3fa6bc934734e4af954abb0b1e26ec026c745289"
+      "bytes": 9309,
+      "sha256": "c139381c0c2f1805a8945cc232603faf36408d51d6357a8bde73b0f041f5c2f3"
     },
     {
       "path": "operator-setup.js",
@@ -160,7 +160,7 @@
     {
       "path": "package.json",
       "bytes": 418,
-      "sha256": "398b6ea63e04b662a17aafd44baee8b8acec446425989c24cd082e1e727b06a9"
+      "sha256": "c7fc09d697e0d810d23ebedf2530953175f572dac37a9e9d63cf4fa8cc2487eb"
     },
     {
       "path": "src/archive-reading.ts",
@@ -281,6 +281,11 @@
       "path": "src/config.ts",
       "bytes": 5095,
       "sha256": "944978a61edc98047f6d0ee7f403df21158e85fabf698e102ddef9c668ec0246"
+    },
+    {
+      "path": "src/content-fingerprint.ts",
+      "bytes": 1075,
+      "sha256": "fc5bb53c3d3291e2739c83c8835d20ea297305ab6cfef73c10572fd2558ac878"
     },
     {
       "path": "src/danmaku.ts",
@@ -450,7 +455,7 @@
     {
       "path": "src/runtime-status.ts",
       "bytes": 1507,
-      "sha256": "13a9658bd8f7aba20d1268a2cb5ce0c46b2c60c364fbe4ceccde2535f218d478"
+      "sha256": "f00e074c3e1c0cbf42ecd50e3b91205f35cde9da7cc7b8e38808c355a4324590"
     },
     {
       "path": "src/sample-review.ts",
@@ -484,8 +489,8 @@
     },
     {
       "path": "src/store.ts",
-      "bytes": 35833,
-      "sha256": "306ef6cb87b5b0688c4124865913c89401abf4188ff9e71b3a6ee665c0611efc"
+      "bytes": 36774,
+      "sha256": "a006c4f9aa5c0caa7719565a8c34bb8b2050978ff7824c2675a260dcad31c2b6"
     },
     {
       "path": "src/time.ts",
@@ -571,6 +576,11 @@
       "path": "tests/asr.test.ts",
       "bytes": 8338,
       "sha256": "571ac742e2fd955a79510cfd4bc1400c249c2a0f8528e1b525081ea02deb2712"
+    },
+    {
+      "path": "tests/audience-change.test.ts",
+      "bytes": 7593,
+      "sha256": "0b2198bcf28e85e7f11e8eeb934481d6e840266adea9d2bdc08c3a1eca8b333f"
     },
     {
       "path": "tests/author-handoff.test.ts",
@@ -1166,8 +1176,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 12363,
-      "sha256": "c77e723e035ddba965f02c676078670aadca9e7da27b15d053c89eaf20c97435"
+      "bytes": 12702,
+      "sha256": "45aa087f62de09f307a5e38b680ba9139f1b7c135047ebbf146e75caf00d8b60"
     },
     {
       "path": ".gitignore",
@@ -1182,7 +1192,7 @@
     {
       "path": "package.json",
       "bytes": 476,
-      "sha256": "8e4cee5736dfbc7d1d6d3d5f0b0fec1ff8491455a8c439820afecdc5c01181a5"
+      "sha256": "803674596a7a03e4c8f8342f819a17764bc03c6bea1bbc4f3704d1d8eaccf523"
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
@@ -1191,8 +1201,8 @@
     },
     {
       "path": "CHANGELOG.md",
-      "bytes": 12793,
-      "sha256": "4e186454569e855607703a6c7db65cc2995b006bd7a307bf0969ad1d66e1ffe7"
+      "bytes": 13423,
+      "sha256": "b87806a698b086c00a5e947dd0f45f0d1371217a882efa3bd3c58ff5c100fcfa"
     },
     {
       "path": ".github/workflows/ci.yml",
@@ -1216,8 +1226,8 @@
     },
     {
       "path": "docs/CHANGES.md",
-      "bytes": 1684,
-      "sha256": "5e0cac0b113044fe31e789955ccf0495c05f5764adb60dfdf40114d2ed25250b"
+      "bytes": 2452,
+      "sha256": "49097521e9aa6b9de331b806fe9b163969c0d6352a14c83fa2fa1dd6fe3b13f5"
     },
     {
       "path": "docs/CUSTOMIZATION.md",
@@ -1237,17 +1247,17 @@
     {
       "path": "docs/LIMITATIONS.md",
       "bytes": 3928,
-      "sha256": "66d40d8c77299421d01cc9a1a5e99896a7c7c6870dd6f89463b5a9c96cbe121d"
+      "sha256": "f2b263b4c2c6cedd733ec93f7e5bb5923744fe53b384bcfcae899d9a10a8c80a"
     },
     {
       "path": "docs/PUBLICATION.md",
       "bytes": 2325,
-      "sha256": "c23fc53968f66aa1c64aaf18709f03c2c1b40b2fbf64c849727f60474499be68"
+      "sha256": "c715c5c91909e677cfb91db9ae7f0b1af35d811b64f5c8307510255ba8151376"
     },
     {
       "path": "docs/RELEASING.md",
       "bytes": 1012,
-      "sha256": "bc48c061c9d693764e8d761e5a834ad4312643fd6afa113ac12ee26bd8b5fa6e"
+      "sha256": "66c5a7e57f7d69421b4e23467fafeac850354e54bba83345dd71e25608a4079c"
     },
     {
       "path": "docs/USAGE.md",
