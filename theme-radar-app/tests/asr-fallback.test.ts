@@ -8,6 +8,12 @@ import type {transcribeAudio} from '../src/asr.ts';
 const bvid='BV1234567890',cid='321',author='123',audioUrl='https://audio.bilivideo.com/sample.m4s?token=private-signed-audio';
 const text='先读取输入资料，再用自动化脚本处理数据，最后生成可以核对的结果。';
 const transcript=(content=text)=>({text:content,segments:content?[{from:0,to:10,content}]:[],duration:30,model:'faster-whisper-base' as const,language:'zh' as const,range:{from:0 as const,to:30},coverage:'complete' as const,audioBytes:1200});
+
+test('显式分段模式处理长P1前600秒，源时长与未读部分分开记录',async()=>{
+ const input=fixture(),x=dependencies();(input.item.metadata.subtitlePages as any[])[0].duration=900;
+ const result=await withAsrFallback(input,{...x.options,clipLongVideos:true,audio:async()=>({bvid,cid,duration:900,audioUrl}),transcribe:async(opts:any)=>{assert.equal(opts.sourceDuration,600);assert.equal(opts.clipAudioAt,600);return {...transcript(),duration:600,range:{from:0,to:600}};}});
+ const page=asrPage(result);assert.equal(page.sourceDuration,900);assert.equal(page.processedRange.to,600);assert.equal(page.partial,true);assert.match(result.evidence.find(e=>e.kind==='asr:p1')!.coverage.note,/其余未读/);
+});
 function fixture(){
   const item:Item={key:'bilibili:'+bvid,platform:'bilibili',externalId:bvid,url:'https://www.bilibili.com/video/'+bvid,title:'不能拿标题代替视频正文',authorId:author,author:'UP',publishedAt:null,discoveredAt:'2026-10-23T00:00:00Z',version:'video',metadata:{requestedPages:[1],subtitlePages:[{page:1,cid,duration:30,state:'unavailable',reason:'no_track_exposed'}],audioRead:false,visionRead:false}};
   const evidence:Evidence[]=[{itemKey:item.key,kind:'description',url:item.url,text:'仅为简介',collectedAt:item.discoveredAt,coverage:{material:'简介',expected:1,acquired:1,processed:0,state:'unread',method:'fixture'}},{itemKey:item.key,kind:'video-reading-manifest',url:item.url,text:JSON.stringify({requestedPages:[1],pages:item.metadata.subtitlePages,audio:{state:'unread',asrConfigured:false},vision:{state:'unread'},otherCommentsRead:0}),collectedAt:item.discoveredAt,coverage:{material:'清单',expected:1,acquired:1,processed:0,state:'unread',method:'fixture'}}];

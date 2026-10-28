@@ -46,16 +46,22 @@ def main():
     # Bound decoded samples while reading, before constructing a waveform. A small
     # compressed file can otherwise decode to hours despite a short metadata claim.
     chunks, samples = [], 0
+    clip=data.get('clipAt')==600 and source_duration==600
+    clipped=False
     with av.open(str(audio), mode='r') as container:
         resampler = av.AudioResampler(format='s16', layout='mono', rate=16000)
         for frame in container.decode(audio=0):
             for decoded in resampler.resample(frame):
                 values = decoded.to_ndarray().flatten()
+                if clip and samples+len(values)>600*16000:
+                    values=values[:600*16000-samples];clipped=True
                 samples += len(values)
                 if samples > 600 * 16000:
                     return {'ok': False, 'code': 'ASR_DURATION_MISMATCH'}
                 chunks.append(values)
-        for decoded in resampler.resample(None):
+                if clipped:break
+            if clipped:break
+        for decoded in ([] if clipped else resampler.resample(None)):
             values = decoded.to_ndarray().flatten()
             samples += len(values)
             if samples > 600 * 16000:
@@ -68,8 +74,7 @@ def main():
     if not 0 < actual_duration <= 600 or abs(actual_duration - source_duration) > 3:
         return {'ok': False, 'code': 'ASR_DURATION_MISMATCH'}
     engine = WhisperModel(str(model), device='cpu', compute_type='int8', cpu_threads=4, num_workers=1, local_files_only=True)
-    iterator, _info = engine.transcribe(waveform, language='zh', beam_size=1, vad_filter=True, condition_on_previous_text=False,
-                                      initial_prompt='以下是简体中文的语音转写。')
+    iterator, _info = engine.transcribe(waveform, language=None, beam_size=1, vad_filter=True, condition_on_previous_text=False)
     segments, characters, end = [], 0, 0
     for row in iterator:
         text = row.text.strip()
@@ -86,7 +91,7 @@ def main():
     if not segments:
         return {'ok': False, 'code': 'ASR_EMPTY'}
     return {'ok': True, 'text': '\n'.join(s['content'] for s in segments), 'segments': segments, 'duration': actual_duration,
-            'model': 'faster-whisper-base', 'language': 'zh', 'range': {'from': 0, 'to': actual_duration}, 'coverage': 'complete'}
+            'model': 'faster-whisper-base', 'language': _info.language, 'range': {'from': 0, 'to': actual_duration}, 'coverage': 'complete'}
 
 
 if __name__ == '__main__':

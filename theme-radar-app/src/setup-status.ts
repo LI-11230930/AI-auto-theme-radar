@@ -1,3 +1,4 @@
+import {githubCredentialStatus} from './github-credential.ts';
 import {accessSync,constants,lstatSync,statSync,readFileSync} from 'node:fs';
 import {delimiter,isAbsolute,resolve} from 'node:path';
 import {BilibiliSource} from './bilibili.ts';
@@ -77,12 +78,12 @@ export function setupStatus(config:any,topics:Topic[],options:Environment={}){
   try{const custom=loadMailTemplate(config.dataDir);add('template','ready','邮件模板',custom?'自定义模板结构有效；冻结草稿保留生成时的模板。':'使用内置简洁模板，可自行调整栏目与内容。','编辑邮件模板','#mail-template');}
   catch{add('template','invalid','邮件模板','保存的模板格式无效，生成草稿会停止。','修复并保存模板','#mail-template');}
   add('mail','optional','邮箱投递',config.recipient?'已配置收件人；此检查不验证宿主邮箱连接或SMTP授权。阅读和草稿可单独使用。':'尚未配置收件人，可先阅读并生成本地草稿。','查看邮箱连接与投递说明','/help/install');
-  const githubToken=(options.env??process.env).GITHUB_TOKEN;
-  add('github','optional','GitHub访问',githubToken?'启动环境中存在GitHub凭据，未验证权限或额度。':'未配置GitHub凭据，可匿名读取；共享额度可能较低。','查看GitHub凭据设置方法','/help/install');
+  const githubToken=githubCredentialStatus(config,{env:options.env??process.env});
+  add('github',githubToken.state==='blocked'?'invalid':'optional','GitHub访问',githubToken.note,'查看GitHub凭据设置方法','/help/install');
   const missing=(ids:string[])=>checks.filter(c=>ids.includes(c.id)&&['missing','invalid'].includes(c.state)).map(c=>c.id);
   const common=['node','runner','template'];
   const workflow=(id:string,title:string,platformTopics:Topic[],requirements:string[])=>({id,title,configured:platformTopics.length>0,blockers:[...(!platformTopics.length?['topics']:[]),...missing(requirements)],localReady:platformTopics.length>0&&!missing(requirements).length});
   return {at:new Date().toISOString(),scope:'offline_local_configuration',liveVerified:false,modelInvoked:false,emailSent:false,modelProbe,checks,
-    workflows:[workflow('github','GitHub主题阅读与草稿',enabled.filter(t=>t.platforms.includes('github')),common),workflow('bilibili','B站登录阅读与草稿',biliTopics,[...common,'bilibili']),{id:'archive',title:'已有档案后台分析',configured:true,blockers:missing(['node','runner']),localReady:!missing(['node','runner']).length}],
+    workflows:[workflow('github','GitHub主题阅读与草稿',enabled.filter(t=>t.platforms.includes('github')),[...common,'github']),workflow('bilibili','B站登录阅读与草稿',biliTopics,[...common,'bilibili']),{id:'archive',title:'已有档案后台分析',configured:true,blockers:missing(['node','runner']),localReady:!missing(['node','runner']).length}],
     note:'就绪仅表示本机前置条件满足，不代表模型授权、平台读取、邮箱送达或任何宿主MCP已通过。交互MCP阅读与后台分析器分别配置。'};
 }

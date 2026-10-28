@@ -11,7 +11,7 @@
 ```powershell
 git remote add origin https://github.com/YOUR_USERNAME/theme-radar.git
 git push -u origin main
-git push origin v0.1.0-beta.12
+git push origin v0.1.0-beta.18
 ```
 
 浏览器登录不一定等于Git命令行已认证。若Git弹出账户授权，使用自己的账号完成；不要把令牌写入命令或源码。也可用GitHub Desktop添加此本地仓库，再Publish repository，并取消Keep this code private。
@@ -20,10 +20,10 @@ git push origin v0.1.0-beta.12
 
 上传后首页会显示README，MIT由根目录LICENSE声明。编辑About，可用简介“按自定义主题阅读B站与GitHub，由Agent筛选并生成邮件摘要”，并添加mcp、ai-agent、automation、bilibili等相关Topics。
 
-进入Releases → Draft a new release，选择v0.1.0-beta.12标签，标题可用“Theme Radar v0.1.0-beta.12”；版本说明参考CHANGELOG.md。可附源码ZIP。Actions第一次在GitHub运行后检查结果；本地通过不代替托管运行。
+进入Releases → Draft a new release，选择v0.1.0-beta.17标签，标题可用“Theme Radar v0.1.0-beta.17”；版本说明参考CHANGELOG.md。可附源码ZIP。Actions第一次在GitHub运行后检查结果；本地通过不代替托管运行。
 
 官方指引：https://docs.github.com/en/migrations/importing-source-code/using-the-command-line-to-import-source-code/adding-locally-hosted-code-to-github
 
 ## 发布目录的边界
 
-源码不包含开发者邮箱、作者订阅、私人站点、本机路径、配置、Cookie、模型、数据库、实机截图、邮件正文或旧开发提交。使用新的单次初始提交，不继承此前发布准备目录的Git历史。所有账号由安装者在自己的机器上配置；自动运行数据目录已加入.gitignore。
+源码不包含开发者邮箱、作者订阅、私人站点、本机路径、配置、Cookie、模型、数据库、实机截图、邮件正文或私有开发提交。首次创建仓库时只提交清理后的源码；更新已有公开仓库时保留其提交历史，增量提交并添加新版本标签，不强推或覆盖旧标签。所有账号由安装者在自己的机器上配置；自动运行数据目录已加入.gitignore。

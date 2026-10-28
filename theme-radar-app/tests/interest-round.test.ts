@@ -9,6 +9,13 @@ import {beijingDate,batchAt,deliveryKey} from '../src/time.ts';
 const topic:Topic={id:'interest',name:'兴趣测试',description:'按自动化开发兴趣阅读',keywords:['自动化','MCP','AI'],exclude:['广告'],platforms:['bilibili'],bilibiliDiscovery:'interests',bilibiliAuthors:[],enabled:true};
 const bv=(n:number)=>'BV'+String(n).padStart(10,'0');
 const candidate=(n:number,author=String(n))=>({bvid:bv(n),title:'MCP 自动化工具 '+n,authorId:author,publishedAt:'2020-01-01T00:00:00Z'});
+
+test('持续模式保留缺正文候选，继续寻找可读内容；取得后清除待恢复状态',async t=>{
+ const x=setup(t),read=x.source.read;x.source.read=async(...args)=>{const r=await read(...args);if(args[0]===bv(1))r.evidence=[];return r;};
+ const first=await x.run({recoverUnread:true});assert.equal(first.results.length,4);assert.equal(first.counts.assessed,3);assert.equal(first.sample.count,3);
+ const pending=x.store.db.prepare("SELECT data FROM jobs WHERE id LIKE 'video-recovery:%'").all();assert.equal(pending.length,1);assert.equal(JSON.parse(pending[0].data).candidate.bvid,bv(1));
+ x.source.read=read;await x.run({recoverUnread:true,readLimit:1});assert.equal(x.store.db.prepare("SELECT state FROM jobs WHERE id LIKE 'video-recovery:%'").get().state,'done');
+});
 test('真实阅读计数区分取得/缓存、新判断/复用及薄正文跳过，不把尝试数说成新读数',()=>{assert.deepEqual(interestCounts({results:[{state:'assessed',selected:true,reused:true,acquisition:{cached:true}},{state:'assessed',selected:false,reused:false,acquisition:{cached:false}},{state:'insufficient_body',selected:false,acquisition:{cached:true}},{state:'no_subtitle'},{state:'failed'}]}),{attempted:5,newSourceReads:1,cachedMaterials:2,assessed:2,newAssessments:1,reusedAssessments:1,selected:1,insufficientBody:1,unavailableBody:1,failed:1});});
 function setup(t:any){const dir=mkdtempSync(join(tmpdir(),'radar-interest-')),store=new Store(':memory:');store.saveTopic(topic);t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});let models=0,reads=0;
  const source={recommendations:async()=>({items:[candidate(1),candidate(2),candidate(3),candidate(4)],authenticated:true}),search:async()=>[],read:async(bvid:string,options:any)=>{reads++;return {item:{key:'bilibili:'+bvid,platform:'bilibili' as const,externalId:bvid,title:'MCP 自动化工具',url:'https://www.bilibili.com/video/'+bvid,authorId:options.expectedAuthorUid,author:'用户UP',publishedAt:'2020-01-01T00:00:00Z',discoveredAt:new Date().toISOString(),version:'video',metadata:{}},evidence:[{itemKey:'bilibili:'+bvid,kind:'subtitle',text:videoBody,url:'https://www.bilibili.com/video/'+bvid,collectedAt:new Date().toISOString(),coverage:{material:'字幕',expected:1,acquired:1,processed:0,state:'unread' as const,method:'fixture'}}],warnings:[]};}};

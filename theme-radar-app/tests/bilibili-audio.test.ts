@@ -14,6 +14,14 @@ test('核对实际BV/作者/P1 CID/时长后，只取正常DASH最低带宽；�
   const {source,calls}=setup(),result=await source.audio(bvid,options);assert.deepEqual(result,{bvid,cid:'456',duration:90,audioUrl:'https://audio.bilivideo.cn/low.m4s?expires=1'});
   assert.deepEqual(calls.map(c=>c.url),['https://api.bilibili.com/x/web-interface/view?bvid='+bvid,'https://api.bilibili.com/x/player/playurl?bvid='+bvid+'&cid=456&fnval=16&qn=16&fourk=0']);assert.ok(calls.every(c=>new URL(c.url).hostname==='api.bilibili.com'&&!c.headers.has('cookie')));
 });
+
+test('正常单文件合流响应可解码音轨；画面模式使用DASH视频且复核同一身份',async()=>{
+ const mux=setup({playback:{dash:undefined,durl:[{url:'https://audio.bilivideo.com/progressive.mp4',length:90000,size:2000000}]}});
+ assert.match((await mux.source.audio(bvid,options)).audioUrl,/progressive/);assert.equal(mux.calls.length,2);
+ const video=setup({playback:{dash:{audio:[{bandwidth:1,baseUrl:'https://audio.bilivideo.com/a'}],video:[{bandwidth:2,baseUrl:'https://video.bilivideo.com/v'}]}}});
+ assert.match((await video.source.audio(bvid,{...options,preferVideo:true})).audioUrl,/video.bilivideo.com/);
+ for(const change of [{size:33554433},{length:1000},{url:'http://evil.invalid/a'}]){const s=setup({playback:{dash:undefined,durl:[{url:'https://audio.bilivideo.com/a',length:90000,size:1000,...change}]}});await assert.rejects(s.source.audio(bvid,options));}
+});
 test('无效BV/UID/CID、外链/非HTTPS/其他P先于任何联网拒绝',async()=>{
   const {source,calls}=setup();
   for(const [video,input]of [['bad',options],[bvid,{...options,expectedAuthorUid:'昵称'}],[bvid,{...options,expectedAuthorUid:'0'}],[bvid,{...options,expectedCid:'0'}],[bvid,{...options,expectedCid:'456.1'}],[bvid,{...options,expectedCid:456}],['https://evil.invalid/video/'+bvid,options],['http://www.bilibili.com/video/'+bvid,options],['https://user:pass@www.bilibili.com/video/'+bvid,options],['https://www.bilibili.com:8080/video/'+bvid,options],['https://www.bilibili.com/video/'+bvid+'?p=2',options],['https://www.bilibili.com/video/'+bvid+'?p=1&p=1',options]] as any[])await assert.rejects(source.audio(video,input));

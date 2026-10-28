@@ -30,6 +30,7 @@ import {BilibiliLogin} from './bilibili-login.ts';
 import{freezeBilibiliSample,readBilibiliSample}from'./bilibili-sample.ts';
 import{interestStatus,runConfiguredInterest,cancelInterest}from'./interest-service.ts';
 import {setupStatus} from './setup-status.ts';
+import {platformControls,setPlatform,triggerPlatform} from './platform-controls.ts';
 import {listBackups,createManagedBackup,managedBackupPath,rehearseBackup} from './backup.ts';
 
 export async function startOperator(port?:number,automationDependencies?:any){
@@ -49,6 +50,8 @@ export async function startOperator(port?:number,automationDependencies?:any){
     try{
       if(await browserBatchHttp(req,res,browserBatches))return;
       if(req.method==='GET'&&url.pathname==='/'){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(readFileSync(resolve(APP_ROOT,'operator.html')));return;}
+      const workbenchAssets:Record<string,[string,string]>={'/assets/workbench.css':['operator-workbench.css','text/css'],'/assets/workbench.js':['operator-workbench.js','application/javascript'],'/assets/workbench-core.js':['workbench-core.js','application/javascript']};
+      if(req.method==='GET'&&workbenchAssets[url.pathname]){const [file,type]=workbenchAssets[url.pathname];res.writeHead(200,{'Content-Type':type+'; charset=utf-8'});res.end(readFileSync(resolve(APP_ROOT,file)));return;}
       if(req.method==='GET'&&url.pathname==='/help/install'){res.writeHead(200,{'Content-Type':'text/plain; charset=utf-8','Content-Security-Policy':"default-src 'none'; base-uri 'none'; form-action 'none'"});res.end(readFileSync(resolve(APP_ROOT,'INSTALL.md')));return;}
       if(req.method==='GET'&&url.pathname==='/assets/reading.js'){res.writeHead(200,{'Content-Type':'application/javascript; charset=utf-8'});res.end(readFileSync(resolve(APP_ROOT,'operator-reading.js')));return;}
       if(req.method==='GET'&&url.pathname==='/assets/login.js'){res.writeHead(200,{'Content-Type':'application/javascript; charset=utf-8'});res.end(readFileSync(resolve(APP_ROOT,'operator-login.js')));return;}
@@ -73,6 +76,7 @@ export async function startOperator(port?:number,automationDependencies?:any){
       if(req.method==='GET'&&url.pathname==='/preview/bilibili-sample'){const sample=readBilibiliSample(config.dataDir,url.searchParams.get('id')||'');res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"});res.end(sample.html);return;}
       if(req.method==='GET'&&url.pathname==='/api/state'){reply(200,{token,operatorIdentity:operatorIdentity(config),...capabilityReport(config,store)});return;}
       if(req.method==='GET'&&url.pathname==='/api/automation'){reply(200,automation.status());return;}
+      if(req.method==='GET'&&url.pathname==='/api/automation/platforms'){reply(200,platformControls(automation));return;}
       if(req.method==='GET'&&url.pathname==='/api/automation/draft'){reply(200,draftView(config,store,url.searchParams.get('runId')||''));return;}
       if(req.method==='GET'&&url.pathname==='/assets/automation.js'){res.writeHead(200,{'Content-Type':'application/javascript; charset=utf-8'});res.end(readFileSync(resolve(APP_ROOT,'operator-automation.js')));return;}
       if(req.method==='GET'&&url.pathname==='/assets/outbox.js'){res.writeHead(200,{'Content-Type':'application/javascript; charset=utf-8'});res.end(readFileSync(resolve(APP_ROOT,'operator-outbox.js')));return;}
@@ -109,6 +113,8 @@ export async function startOperator(port?:number,automationDependencies?:any){
       const chunks:Buffer[]=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>200000){reply(413,{error:'请求过大'});return;}chunks.push(chunk);}const raw=Buffer.concat(chunks).toString('utf8');
       let body:any;try{body=JSON.parse(raw||'{}');}catch{throw new RadarError('INVALID_INPUT','请求JSON格式无效');}if(!body||typeof body!=='object'||Array.isArray(body))throw new RadarError('INVALID_INPUT','需要JSON对象');
       if(url.pathname==='/api/automation/save'){reply(200,automation.save(body.plan,body.expectedRevision));return;}
+      if(url.pathname==='/api/automation/platforms/set'){reply(200,setPlatform(automation,body));return;}
+      if(url.pathname==='/api/automation/platforms/trigger'){reply(200,triggerPlatform(automation,body));return;}
       if(url.pathname==='/api/automation/draft'){reply(200,draftView(config,store,body.runId));return;}
       if(url.pathname==='/api/automation/mail/prepare'){reply(200,prepareOneOff(config,store,body));return;}
       if(url.pathname==='/api/automation/start'){reply(200,automation.startRun(requireText(body.planId,'计划ID',80)));return;}

@@ -11,6 +11,9 @@
   "runtimeEnabled": false,
   "defaultAgent": "DSH",
   "topics": [],
+  "github": {
+    "credentialFile": null
+  },
   "limits": {
     "candidates": 20,
     "selected": 5,
@@ -29,7 +32,11 @@
     "asr": {
       "enabled": false,
       "pythonCommand": null,
-      "modelDir": null
+      "modelDir": null,
+      "clipLongVideos": false
+    },
+    "visual": {
+      "enabled": false
     }
   },
   "xiaohongshu": {

@@ -4,18 +4,19 @@ import {isEmailAddress} from './email-address.ts';
 import {beijingDate} from './time.ts';
 import type {Store} from './store.ts';
 export const automationAgents=['DSH','WorkBuddy','Codex','TRAE'];
-export type AutomationPlan={id:string;name:string;enabled:boolean;agent:string;execution:'attached'|'background';topicIds:string[];platforms:('github'|'bilibili')[];schedule:{kind:'manual'|'daily'|'interval';times?:string[];weekdays?:number[];minutes?:number};delivery:'draft'|'smtp'|'host';recipient:string|null;from:string|null;sendApproved:boolean;maxMessagesPerDay:number;readLimit:number;githubReadLimit:number;subject:string;revision:number;createdAt:string;updatedAt:string};
+export type AutomationPlan={id:string;name:string;enabled:boolean;agent:string;execution:'attached'|'background';topicIds:string[];platforms:('github'|'bilibili')[];schedule:{kind:'manual'|'daily'|'interval';times?:string[];weekdays?:number[];minutes?:number};delivery:'draft'|'smtp'|'host';recipient:string|null;from:string|null;sendApproved:boolean;maxMessagesPerDay:number;mailBudgetScope?:'recipient'|'plan';readLimit:number;githubReadLimit:number;subject:string;revision:number;createdAt:string;updatedAt:string};
 export function plans(store:Store):AutomationPlan[]{return store.db.prepare("SELECT data FROM jobs WHERE id LIKE 'automation-plan:%' ORDER BY id").all().map((r:any)=>JSON.parse(r.data));}
 export function planById(store:Store,id:string){return plans(store).find(p=>p.id===id);}
 export function validatePlan(input:any,store:Store){
  if(!input||typeof input!=='object'||Array.isArray(input))throw new RadarError('INVALID_PLAN','计划需要对象');
- const allowed=['id','name','enabled','agent','execution','topicIds','platforms','schedule','delivery','recipient','from','sendApproved','maxMessagesPerDay','readLimit','githubReadLimit','subject','revision','createdAt','updatedAt'];
+ const allowed=['id','name','enabled','agent','execution','topicIds','platforms','schedule','delivery','recipient','from','sendApproved','maxMessagesPerDay','mailBudgetScope','readLimit','githubReadLimit','subject','revision','createdAt','updatedAt'];
  if(Object.keys(input).some(k=>!allowed.includes(k)))throw new RadarError('INVALID_PLAN','计划含未知字段');
  if(typeof input.id!=='string'||! /^[a-zA-Z0-9_-]{1,80}$/.test(input.id))throw new RadarError('INVALID_PLAN','计划ID使用1至80个字母、数字、下划线或短横线');
  requireText(input.name,'计划名称',120);
+ if(input.mailBudgetScope!==undefined&&!['recipient','plan'].includes(input.mailBudgetScope))throw new RadarError('INVALID_PLAN','邮件额度范围无效');
  if(typeof input.enabled!=='boolean'||!automationAgents.includes(input.agent)||!['attached','background'].includes(input.execution)||!['draft','smtp','host'].includes(input.delivery)||typeof input.sendApproved!=='boolean')throw new RadarError('INVALID_PLAN','执行模式、宿主或投递模式无效');
  if(input.execution==='background'&&input.agent==='WorkBuddy')throw new RadarError('INTERACTIVE_HOST','WorkBuddy使用当前会话执行，尚无已验证后台CLI；请选择交互模式');
- if(!Array.isArray(input.topicIds)||!input.topicIds.length||input.topicIds.length>20||new Set(input.topicIds).size!==input.topicIds.length||input.topicIds.some((id:any)=>typeof id!=='string'||!store.topics().some(t=>t.id===id&&t.enabled)))throw new RadarError('TOPIC_REQUIRED','选择1至20个已启用主题');
+ if(!Array.isArray(input.topicIds)||!input.topicIds.length||input.topicIds.length>20||new Set(input.topicIds).size!==input.topicIds.length||input.topicIds.some((id:any)=>typeof id!=='string'||!store.topics().some(t=>t.id===id&&(!input.enabled||t.enabled))))throw new RadarError('TOPIC_REQUIRED','选择1至20个已启用主题；停用计划可保留原主题');
  if(!Array.isArray(input.platforms)||!input.platforms.length||new Set(input.platforms).size!==input.platforms.length||input.platforms.some((p:any)=>!['github','bilibili'].includes(p)))throw new RadarError('INVALID_PLAN','请选择B站或GitHub');
  for(const platform of input.platforms)if(!input.topicIds.some((id:string)=>store.topics().some(t=>t.id===id&&t.platforms.includes(platform))))throw new RadarError('TOPIC_REQUIRED','选定平台缺少对应主题');
  for(const [key,max] of [['readLimit',3],['githubReadLimit',20],['maxMessagesPerDay',24]] as const)if(!Number.isSafeInteger(input[key])||input[key]<1||input[key]>max)throw new RadarError('INVALID_BUDGET',`${key}需要1至${max}`);
@@ -31,12 +32,14 @@ export function validatePlan(input:any,store:Store){
  if(s.kind!=='daily'&&(s.times!==undefined||s.weekdays!==undefined)||s.kind!=='interval'&&s.minutes!==undefined)throw new RadarError('INVALID_SCHEDULE','频率字段与模式不匹配');
  return input;
 }
-export function savePlan(store:Store,input:any,expectedRevision?:number){return store.tx(()=>{
+/** Caller owns the transaction, allowing an atomic group of linked plans. */
+export function writePlan(store:Store,input:any,expectedRevision?:number){
  validatePlan(input,store);const old=planById(store,input.id);
  if(old&&expectedRevision!==old.revision||!old&&expectedRevision!==undefined&&expectedRevision!==0)throw new RadarError('STALE_PLAN','计划已变化，请重新读取');
  const clock=now(),p:AutomationPlan={...input,revision:(old?.revision||0)+1,createdAt:old?.createdAt||clock,updatedAt:clock};
  store.db.prepare('INSERT INTO jobs VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,updated_at=excluded.updated_at').run('automation-plan:'+p.id,'done','configuration','',0,JSON.stringify(p),clock);return p;
-});}
+}
+export function savePlan(store:Store,input:any,expectedRevision?:number){return store.tx(()=>writePlan(store,input,expectedRevision));}
 function candidates(p:AutomationPlan,clock:number){
  if(p.schedule.kind==='manual')return [];
  if(p.schedule.kind==='interval'){const step=p.schedule.minutes!*60000,base=Date.parse(p.updatedAt);return [base+Math.floor((clock-base)/step)*step,base+(Math.floor((clock-base)/step)+1)*step].filter(t=>t>base);}

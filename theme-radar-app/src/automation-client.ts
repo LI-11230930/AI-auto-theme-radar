@@ -6,6 +6,7 @@ import {operatorUrl} from './operator-url.ts';
 import {operatorIdentity} from './operator-identity.ts';
 import {APP_ROOT,configFilePath} from './config.ts';
 import {serviceVersion} from './runtime-status.ts';
+import {githubCredentialStatus} from './github-credential.ts';
 const sessionId=randomUUID();
 const pause=(ms:number)=>new Promise<void>(resolve=>setTimeout(resolve,ms));
 type OperatorState={ready:boolean;code:string;url:string;serviceVersion?:string;processId?:number;restartRequired?:boolean|null;note:string};
@@ -16,7 +17,7 @@ async function connection(config:any):Promise<{status:OperatorState;token?:strin
  let data:any;try{data=await response.json();}catch{return {status:{ready:false,code:'OPERATOR_UNRECOGNIZED',url,note:'端口响应不是主题雷达状态。'}};}
  if(!data||typeof data.token!=='string'||!data.service||typeof data.service.processId!=='number')return {status:{ready:false,code:'OPERATOR_UNRECOGNIZED',url,note:'端口响应不是可用的主题雷达服务。'}};
  const details={url,serviceVersion:data.service.serviceVersion,processId:data.service.processId,restartRequired:data.service.restartRequired};
- if(data.service.serviceVersion!==serviceVersion)return {status:{...details,ready:false,code:'OPERATOR_VERSION_MISMATCH',note:'MCP与本机服务版本不同，请核对并重启服务。'}};
+ if(data.service.serviceVersion!==serviceVersion)return {status:{...details,ready:false,code:'OPERATOR_VERSION_MISMATCH',note:`MCP=${serviceVersion}，本机服务=${data.service.serviceVersion}。旧MCP需重新连接；只有本机服务旧时才重启服务，不关闭版本检查。`}};
  if(data.service.restartRequired!==false)return {status:{...details,ready:false,code:'OPERATOR_RESTART_REQUIRED',note:'服务源码已变化或无法核对，请重启服务。'}};
  if(data.operatorIdentity!==operatorIdentity(config))return {status:{...details,ready:false,code:'OPERATOR_LEDGER_MISMATCH',note:'服务连接的账本与当前宿主不同；请核对配置，不自动替换。'}};
  return {status:{...details,ready:true,code:'READY',note:'统一服务与当前账本匹配。'},token:data.token};
@@ -27,7 +28,10 @@ export async function startOperatorService(config:any){
  let status=await operatorStatus(config);if(status.ready)return {...status,started:false,reused:true};
  if(status.code!=='OPERATOR_REQUIRED')throw new RadarError(status.code,status.note);
  const port=Number(new URL(status.url).port);let spawnError=false;
- const child=spawn(process.execPath,[resolve(APP_ROOT,'src/cli.ts'),'serve',String(port)],{cwd:APP_ROOT,env:{...process.env,THEME_RADAR_CONFIG:configFilePath()},detached:true,stdio:'ignore',windowsHide:true});child.on('error',()=>{spawnError=true;});child.unref();
+ const childEnv={...process.env,THEME_RADAR_CONFIG:configFilePath()};
+ // The worker loads its own protected record, retaining expiry/update tracking.
+ if(githubCredentialStatus(config).source==='protected_file')delete childEnv.GITHUB_TOKEN;
+ const child=spawn(process.execPath,[resolve(APP_ROOT,'src/cli.ts'),'serve',String(port)],{cwd:APP_ROOT,env:childEnv,detached:true,stdio:'ignore',windowsHide:true});child.on('error',()=>{spawnError=true;});child.unref();
  const deadline=Date.now()+8000;
  do{await pause(100);status=await operatorStatus(config);if(status.ready)return {...status,started:status.processId===child.pid,reused:status.processId!==child.pid};if(status.code!=='OPERATOR_REQUIRED')throw new RadarError(status.code,status.note);}while(!spawnError&&Date.now()<deadline);
  throw new RadarError('OPERATOR_START_FAILED','本机服务未在限定时间内就绪；请核对端口和配置，不自动重试或关闭其他进程。');

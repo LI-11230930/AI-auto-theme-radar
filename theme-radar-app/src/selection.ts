@@ -4,6 +4,7 @@ import type { Batch, Item } from './model.ts';
 export type CollectionWindow = {
   topicId:string; topicRevision:number; mode:'baseline_7d'|'incremental';
   startAt:string; endAt:string; previousEndAt:string|null; completed:boolean;
+  discoveryIncomplete?:boolean; processingCompleted?:boolean;
 };
 
 // Activity must come from a source timestamp, never the local discovery clock.

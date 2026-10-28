@@ -50,7 +50,7 @@ export class BilibiliSource {
     return {items,authorId:author,page,limit,totalReported:Number.isSafeInteger(data.page?.count)&&data.page.count>=0?data.page.count:null,exhaustive:false,scope:'指定UID的有界最近投稿页；不代表全部历史、删除/隐藏投稿或无遗漏增量，不读取评论'};
   }
   /** Exposes one normally available P1 DASH audio URL to a bounded local ASR worker; never downloads or stores it. */
-  async audio(bvidInput:string,options:{expectedAuthorUid:string;expectedCid:string;signal?:AbortSignal}):Promise<{bvid:string;cid:string;duration:number;audioUrl:string}>{
+  async audio(bvidInput:string,options:{expectedAuthorUid:string;expectedCid:string;signal?:AbortSignal;preferVideo?:boolean;allowLong?:boolean}):Promise<{bvid:string;cid:string;duration:number;audioUrl:string}>{
     const checkpoint=()=>{if(options?.signal?.aborted)throw new RadarError('CANCELLED','本轮已取消，未继续获取音频');};checkpoint();
     const decimal=(value:unknown):string|null=>{
       if(typeof value==='number')return Number.isSafeInteger(value)&&value>0?String(value):null;
@@ -71,19 +71,23 @@ export class BilibiliSource {
     else if(Array.isArray(info.pages)&&info.pages.length>0&&info.pages.length<=10000){const first=info.pages.filter((p:any)=>p?.page===1);if(first.length===1)part=first[0];}
     if(!part||decimal(part.cid)!==cid||info.cid!==undefined&&decimal(info.cid)!==cid)throw new RadarError('SOURCE_CHANGED','P1 CID与已核对材料不一致，未读取音频地址');
     const duration=part.duration;
-    if(typeof duration!=='number'||!Number.isFinite(duration)||duration<=0||duration>600)throw new RadarError('ASR_BUDGET','本轮仅支持已知时长且不超过600秒的P1音频');
-    checkpoint();let playback:any;try{playback=await this.api('/x/player/playurl?'+new URLSearchParams({bvid,cid,fnval:'16',qn:'16',fourk:'0'}));}finally{checkpoint();}
+    if(typeof duration!=='number'||!Number.isFinite(duration)||duration<=0||duration>(options.allowLong?7200:600))throw new RadarError('ASR_BUDGET','源时长未知或超出本次音频读取预算');
+    checkpoint();let playback:any;try{playback=await this.api('/x/player/playurl?'+new URLSearchParams({bvid,cid,fnval:'16',qn:options.preferVideo?'80':'16',fourk:'0'}));}finally{checkpoint();}
     if(playback?.bvid!==undefined&&playback.bvid!==bvid)throw new RadarError('VIDEO_MISMATCH','音频播放结果返回了其他视频');
     if(playback?.cid!==undefined&&decimal(playback.cid)!==cid)throw new RadarError('SOURCE_CHANGED','音频播放结果返回了其他分P');
-    const audio=playback?.dash?.audio;
-    if(!Array.isArray(audio)||!audio.length||audio.length>1000)throw new RadarError('NO_AUDIO','接口未正常暴露有界DASH音轨；未尝试其他播放或受限来源');
-    const streams=audio.filter((row:any)=>row&&typeof row==='object'&&!Array.isArray(row)&&Number.isSafeInteger(row.bandwidth)&&row.bandwidth>0);
-    if(!streams.length)throw new RadarError('NO_AUDIO','DASH音轨没有有效的正整数带宽');
-    const stream=streams.reduce((best:any,row:any)=>row.bandwidth<best.bandwidth?row:best),raw=stream.baseUrl??stream.base_url;
+    const audio=options.preferVideo?playback?.dash?.video:playback?.dash?.audio;
+    const streams=Array.isArray(audio)&&audio.length<=1000?audio.filter((row:any)=>row&&typeof row==='object'&&!Array.isArray(row)&&Number.isSafeInteger(row.bandwidth)&&row.bandwidth>0):[];
+    const visual=options.preferVideo?streams.filter((s:any)=>s.bandwidth*duration/8<30*1024*1024).sort((a:any,b:any)=>(b.width||0)-(a.width||0)||b.bandwidth-a.bandwidth):[];
+    const stream=visual[0]||(streams.length?streams.reduce((best:any,row:any)=>row.bandwidth<best.bandwidth?row:best):null);
+    // Normal playurl can return one progressive, muxed file instead of DASH.
+    // Accept only that same response, known duration and bounded declared size.
+    const durl=playback?.durl,progressive=Array.isArray(durl)&&durl.length===1&&Number.isSafeInteger(durl[0]?.size)&&durl[0].size>0&&durl[0].size<=32*1024*1024&&typeof durl[0].length==='number'&&durl[0].length>0&&Math.abs(durl[0].length/1000-duration)<=Math.max(3,Math.min(10,duration*.05))?durl[0]:null;
+    const raw=stream?(stream.baseUrl??stream.base_url):progressive?.url;
+    if(!stream&&!progressive)throw new RadarError('NO_AUDIO','正常播放响应未提供可用DASH流或有界合流文件');
     let url:URL;try{if(typeof raw!=='string'||!raw||raw.length>16384)throw new Error('invalid');url=new URL(raw);}catch{throw new RadarError('INVALID_AUDIO_URL','DASH音轨地址无效');}
     const mediaPort=url.port==='8082'&&/\.mcdn\.bilivideo\.cn$/.test(url.hostname);
     if(url.protocol!=='https:'||url.username||url.password||url.port&&!mediaPort||url.hash||!/(?:^|\.)(?:bilivideo\.(?:com|cn)|hdslb\.com)$/.test(url.hostname))throw new RadarError('INVALID_AUDIO_URL','音轨仅允许平台HTTPS媒体域名和指定媒体端口');
-    checkpoint();return{bvid,cid,duration,audioUrl:url.href};
+    checkpoint();return{bvid,cid,duration:stream?duration:progressive.length/1000,audioUrl:url.href};
   }
   async read(bvidInput:string,options:{pages?:number[];expectedAuthorUid?:string;includeDanmaku?:boolean}={}):Promise<{item:Item;evidence:Evidence[];warnings:string[]}>{
     if(options.includeDanmaku!==undefined&&typeof options.includeDanmaku!=='boolean')throw new RadarError('INVALID_INPUT','includeDanmaku需要布尔值');

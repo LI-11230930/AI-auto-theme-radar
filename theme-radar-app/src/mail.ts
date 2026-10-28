@@ -10,6 +10,7 @@ import type { CollectionWindow } from './selection.ts';
 const esc=(value:unknown)=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 const link=(url:string)=>{try{const u=new URL(url);return ['https:','http:'].includes(u.protocol)?esc(u.href):'#';}catch{return '#';}};
 export const MAIL_FORMAT='github-brief-zh-v3';
+export const RANKING_DESCRIPTION_MISSING='未取得项目简介，暂无法概括用途。';
 export type DigestEntry={item:Item;assessment:Assessment;evidence:Evidence[]};
 export function briefZh(value:unknown):string|null{
   if(typeof value!=='string')return null;
@@ -34,9 +35,10 @@ export function renderDigest(options:{batch:Batch;entries:DigestEntry[];rankings
   const rankCopy=(rows:Ranking[],period:'daily'|'weekly')=>{
     if(options.mailTemplate&&!options.mailTemplate.github.sections.includes(period))return [];
     if(rows.length!==10||new Set(rows.map(r=>r.repo)).size!==10)issues.push(period+'_top10_required');
-    return rows.map((r,i)=>{const summary=briefZh(r.summaryZh)||briefZh(r.description);if(!summary)issues.push(period+'_summary:'+r.repo);
+    return rows.map((r,i)=>{const missing=r.descriptionMissing===true&&!r.description.trim()&&r.summaryZh===RANKING_DESCRIPTION_MISSING&&r.flow===undefined;
+      const summary=briefZh(r.summaryZh)||briefZh(r.description);if(!summary)issues.push(period+'_summary:'+r.repo);
       if(r.rank!==i+1||(r.period||(r.source.includes('since=weekly')?'weekly':'daily'))!==period)issues.push(period+'_order_or_period:'+r.repo);
-      const rawFlow=flowSketch(r.flow),flow=rawFlow?.basis==='overview'?rawFlow:null;if(!flow)issues.push(period+'_flow:'+r.repo);const periodStars=r.periodStars===undefined&&period==='daily'?r.starsToday:r.periodStars;return {title:r.repo,url:r.url,summary:summary||'中文简介待补充。',rank:r.rank,flow,starLine:`${period==='daily'?'今日新增':'本周新增'} Star：${starCount(periodStars)} · 累计 Star：${starCount(r.stars)}`};});
+      const rawFlow=flowSketch(r.flow),flow=rawFlow?.basis==='overview'?rawFlow:null;if(!flow&&!missing)issues.push(period+'_flow:'+r.repo);const periodStars=r.periodStars===undefined&&period==='daily'?r.starsToday:r.periodStars;return {title:r.repo,url:r.url,summary:summary||'中文简介待补充。',rank:r.rank,flow,starLine:`${period==='daily'?'今日新增':'本周新增'} Star：${starCount(periodStars)} · 累计 Star：${starCount(r.stars)}`};});
   };
   const dailyCopy=rankCopy(daily,'daily'),weeklyCopy=rankCopy(weekly,'weekly');
   const subject=`${simulated?'[离线样例] ':''}${options.verification?'[联调样张] ':''}GitHub ${batch.slot==='09:00'?'早报':'晚报'}｜${batch.date}｜主题项目、日榜与周榜`;

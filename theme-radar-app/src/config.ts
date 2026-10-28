@@ -11,9 +11,10 @@ export function loadConfig(file?:string) {
   const explicit=file||process.env.THEME_RADAR_CONFIG;file=configFilePath(file);
   if(explicit&&!existsSync(file))throw new RadarError('CONFIG_NOT_FOUND','指定的配置文件不存在；请先用bootstrap configure创建，不会改用另一份默认账本');
   const defaults = JSON.parse(readFileSync(resolve(APP_ROOT,'config.example.json'),'utf8'));
-  let local:any={};try{if(existsSync(file))local=JSON.parse(readFileSync(file,'utf8'));}catch{throw new RadarError('INVALID_CONFIG','无法读取配置JSON；请检查文件格式和权限，原文件未覆盖');}
+  let local:any={};try{if(existsSync(file))local=JSON.parse(readFileSync(file,'utf8').replace(/^\uFEFF/,''));}catch{throw new RadarError('INVALID_CONFIG','无法读取配置JSON；请检查文件格式和权限，原文件未覆盖');}
   if(!local||typeof local!=='object'||Array.isArray(local))throw new RadarError('INVALID_CONFIG','配置JSON需要对象；原文件未覆盖');
-  const config = {...defaults,...local,limits:{...defaults.limits,...local.limits},email:{...defaults.email,...local.email},runners:{...defaults.runners,...local.runners},accounts:{...defaults.accounts,...local.accounts},bilibili:{...defaults.bilibili,...local.bilibili},xiaohongshu:{...defaults.xiaohongshu,...local.xiaohongshu}};
+  if(local.github!==undefined&&(!local.github||typeof local.github!=='object'||Array.isArray(local.github)))throw new RadarError('INVALID_CONFIG','GitHub配置需要对象');
+  const config = {...defaults,...local,limits:{...defaults.limits,...local.limits},email:{...defaults.email,...local.email},runners:{...defaults.runners,...local.runners},accounts:{...defaults.accounts,...local.accounts},bilibili:{...defaults.bilibili,...local.bilibili},github:{credentialFile:null,...defaults.github,...local.github},xiaohongshu:{...defaults.xiaohongshu,...local.xiaohongshu}};
   config.operatorUrl=operatorUrl(config.operatorUrl);
   if(config.timezone!=='Asia/Shanghai'||JSON.stringify(config.sendTimes)!==JSON.stringify(['09:00','18:00']))throw new RadarError('BASELINE_MISMATCH','时区与双时段配置无效');
   if(config.recipient!==null&&!isEmailAddress(config.recipient))throw new RadarError('INVALID_CONFIG','收件人须为单个有效邮箱，或留空为null；留空可进行只读操作');
@@ -24,6 +25,8 @@ export function loadConfig(file?:string) {
   if(!['DSH','WorkBuddy','Codex','TRAE'].includes(config.defaultAgent))throw new RadarError('INVALID_CONFIG','默认 Agent 无效');
   const xhs=new URL(config.xiaohongshu.baseUrl);if(!['127.0.0.1','localhost','[::1]'].includes(xhs.hostname)||xhs.protocol!=='http:'||xhs.username||xhs.password)throw new RadarError('INVALID_CONFIG','小红书桥接仅连接本机 HTTP 服务');
   config.dataDir=resolve(dirname(existsSync(file)?file:resolve(APP_ROOT,'config.example.json')),config.dataDir);
+  if(config.github.credentialFile!==null&&(typeof config.github.credentialFile!=='string'||!config.github.credentialFile.trim()||/[\r\n]/.test(config.github.credentialFile)))throw new RadarError('INVALID_CONFIG','GitHub加密凭据路径无效');
+  if(config.github.credentialFile)config.github.credentialFile=resolve(dirname(file),config.github.credentialFile);
   mkdirSync(config.dataDir,{recursive:true});
   const savedBilibili=resolve(config.dataDir,'credentials','bilibili.json');
   if(!config.bilibili.credentialFile&&existsSync(savedBilibili))config.bilibili.credentialFile=savedBilibili;
@@ -31,6 +34,8 @@ export function loadConfig(file?:string) {
   if(typeof asr.enabled!=='boolean'||asr.pythonCommand!==null&&(typeof asr.pythonCommand!=='string'||!asr.pythonCommand.trim()||/[\r\n]/.test(asr.pythonCommand))||asr.modelDir!==null&&(typeof asr.modelDir!=='string'||!asr.modelDir.trim()))throw new RadarError('INVALID_CONFIG','本地ASR配置格式无效');
   asr.modelDir=asr.modelDir?resolve(dirname(existsSync(file)?file:resolve(APP_ROOT,'config.example.json')),asr.modelDir):resolve(config.dataDir,'models','faster-whisper-base');
   config.bilibili.asr=asr;
+  if(asr.clipLongVideos!==undefined&&typeof asr.clipLongVideos!=='boolean')throw new RadarError('INVALID_CONFIG','长视频分段开关需要布尔值');
+  const visual={enabled:false,...local.bilibili?.visual};if(typeof visual.enabled!=='boolean')throw new RadarError('INVALID_CONFIG','画面文字读取开关需要布尔值');config.bilibili.visual=visual;
   config.network={proxyUrl:proxyUrl(config.network?.proxyUrl)};
   configureNetwork(config.network.proxyUrl);
   return config;

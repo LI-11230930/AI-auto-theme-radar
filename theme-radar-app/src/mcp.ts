@@ -20,6 +20,9 @@ import {automationRequest,operatorStatus,startOperatorService} from './automatio
 const {config,store}=(()=>{try{return context();}catch(error){process.stderr.write(JSON.stringify(publicError(error))+'\n');process.exit(1);}})(),github=new GitHubSource(undefined,store),bili=new BilibiliSource({credentialFile:config.bilibili.credentialFile||undefined}),xhs=new XiaohongshuSource(config.xiaohongshu.baseUrl);
 const object=(properties:object,required:string[]=[])=>({type:'object',properties,required,additionalProperties:false});const text={type:'string'};
 const specs=[
+  {name:'radar_automation_platform_status',description:'查看GitHub每日09:00与B站持续阅读的独立开关、唤醒配置和待恢复正文队列。',inputSchema:object({})},
+  {name:'radar_automation_platform_set',description:'按用户要求开启或关闭一个平台；关闭会取消该平台未发送的正在执行轮次。使用已保存Agent、主题与邮箱，不修改其他平台。',inputSchema:object({platform:{type:'string',enum:['github','bilibili']},enabled:{type:'boolean'}},['platform','enabled'])},
+  {name:'radar_automation_platform_trigger',description:'由已配置会话唤醒触发：GitHub仅北京时间09:00至09:14每日一次，B站开关开启时每15分钟最多一轮；其他轮次运行、重复和关闭拒绝，不直接发送。先trigger取得runId，确实启动后才next，避免误领其他轮次。',inputSchema:object({platform:{type:'string',enum:['github','bilibili']},agent:{type:'string',enum:['DSH','WorkBuddy','Codex','TRAE']}},['platform','agent'])},
   {name:'radar_operator_start',description:'显式启动或复用当前配置的本机统一服务，不修改计划。已启用的后台计划可能随服务到点调用模型或投递；交互计划仍需Agent在线。端口被其他服务占用时拒绝替换。',inputSchema:object({})},
   {name:'radar_automation_status',description:'统一任务计划、频率、执行阶段与宿主在线状态；四宿主使用同一本地执行服务。',inputSchema:object({})},
   {name:'radar_automation_draft_get',description:'只读取得已完成统一轮次的冻结邮件正文、contentHash、完整absolutePreview与发送前置状态；不采集、不调用模型、不登记投递。',inputSchema:object({runId:text},['runId'])},
@@ -69,7 +72,7 @@ export async function callTool(name:string,args:any){
   for(const key of Object.keys(args))if(!Object.hasOwn(spec.inputSchema.properties,key))throw new RadarError('INVALID_INPUT','未知参数 '+key);
   if(name.startsWith('radar_xiaohongshu_')&&config.xiaohongshu.enabled===false)throw new RadarError('CAPABILITY_PAUSED','用户已暂缓小红书，本轮不访问该平台');
   const saved=(result:any)=>{const capture=store.capture(result.item,result.evidence);return {...result,evidence:store.currentEvidence(result.item.key),capture};};
-  if(name.startsWith('radar_automation_')){const action=name.slice('radar_automation_'.length),paths:Record<string,string>={status:'',draft_get:'/draft',mail_prepare:'/mail/prepare',save:'/save',start:'/start',next:'/next',submit:'/submit',cancel:'/cancel',mail_claim:'/mail/claim',mail_report:'/mail/report'};return automationRequest(config,paths[action],action==='status'?undefined:args);}
+  if(name.startsWith('radar_automation_')){const action=name.slice('radar_automation_'.length),paths:Record<string,string>={status:'',platform_status:'/platforms',platform_set:'/platforms/set',platform_trigger:'/platforms/trigger',draft_get:'/draft',mail_prepare:'/mail/prepare',save:'/save',start:'/start',next:'/next',submit:'/submit',cancel:'/cancel',mail_claim:'/mail/claim',mail_report:'/mail/report'};return automationRequest(config,paths[action],['status','platform_status'].includes(action)?undefined:args);}
   switch(name){
     case 'radar_status':return {...capabilityReport(config,store),operator:await operatorStatus(config),interest:interestStatus(config,store),mcp:{toolCount:specs.length,readingProtocol:'prepare-renew-cancel-submit-v1'}};
     case 'radar_operator_start':return startOperatorService(config);

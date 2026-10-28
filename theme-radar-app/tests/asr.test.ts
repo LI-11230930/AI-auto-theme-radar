@@ -30,7 +30,7 @@ test('完整短音频输出保留独立分段与实际处理范围，空转写�
   assert.throws(()=>parseAsrOutput({ok:false,code:'private-model-error'},5),(e:any)=>e.code==='ASR_FAILED'&&!e.message.includes('private'));
 });
 test('错误模型、时长、范围、非有限/倒序/重叠时间和不一致正文均拒绝',()=>{
-  for(const changed of [{model:'other'},{language:'en'},{coverage:'partial'},{duration:0},{duration:601},{duration:Infinity},{duration:15,range:{from:0,to:15}},{range:{from:1,to:5}},{text:'伪造正文'},
+  for(const changed of [{model:'other'},{language:'invalid-language'},{coverage:'partial'},{duration:0},{duration:601},{duration:Infinity},{duration:15,range:{from:0,to:15}},{range:{from:1,to:5}},{text:'伪造正文'},
     ...[{from:-1,to:1,content:'a'},{from:NaN,to:1,content:'a'},{from:1,to:1,content:'a'},{from:1,to:6,content:'a'},{from:1,to:2,content:''}].map(s=>({segments:[s]})),
     {segments:[{from:0,to:3,content:'读取资料'},{from:2,to:4,content:'生成结果'}]}])assert.throws(()=>parseAsrOutput(output(changed),5));
   assert.throws(()=>parseAsrOutput(output({text:'x'.repeat(40001)}),5),{code:'ASR_OUTPUT_LIMIT'});assert.throws(()=>parseAsrOutput(output({segments:new Array(1001).fill({from:0,to:1,content:'x'})}),5),{code:'ASR_OUTPUT_LIMIT'});

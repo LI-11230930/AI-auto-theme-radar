@@ -5,6 +5,7 @@ import { now, stableId, RadarError, hash } from './model.ts';
 import type { Item, Evidence, Ranking, RankingPeriod, Topic } from './model.ts';
 import { activityInWindow,sourceTimestamp } from './selection.ts';
 import type { CollectionWindow } from './selection.ts';
+import {requireGithubCredential} from './github-credential.ts';
 export type RateLedger={cooldowns:(prefix?:string,clock?:number)=>{scope:string;retryAt:string}[];setCooldown:(scope:string,retryAt:string)=>void};
 
 const numeric=(text:string|undefined)=>{if(!text)return null;const clean=text.replace(/,/g,'').trim();if(/^\d+$/.test(clean))return Number(clean);const m=/^(\d+(?:\.\d+)?)k$/i.exec(clean);return m?Math.round(Number(m[1])*1000):null;};
@@ -28,10 +29,12 @@ export function parseTrending(html:string,observedAt=now(),period:RankingPeriod=
 }
 export class GitHubSource {
   fetcher?:Fetcher;store?:RateLedger;
+  rankingReadmes=new Map<string,{description:string;descriptionSource:string}>();
   constructor(fetcher?:Fetcher,store?:RateLedger){this.fetcher=fetcher;this.store=store;}
   scopePrefix(){return 'github:'+ (process.env.GITHUB_TOKEN?'auth-'+hash(process.env.GITHUB_TOKEN).slice(0,20):'anonymous')+':';}
   cooldown(){return this.store?.cooldowns(this.scopePrefix())[0]||null;}
   private async request(url:string,options:Parameters<typeof request>[1]={}){
+    requireGithubCredential();
     const api=new URL(url).hostname==='api.github.com',resource=new URL(url).pathname.startsWith('/search/')?'search':'core',prefix=this.scopePrefix();
     const active=api?this.store?.cooldowns(prefix).find(r=>r.scope===prefix+resource||r.scope===prefix+'secondary'):null;
     if(active)throw new RadarError('RATE_LIMITED','GitHub冷却中，'+active.retryAt+' 后再试',{retryAt:active.retryAt,resource,persisted:true});
@@ -91,5 +94,24 @@ export class GitHubSource {
     for(const path of paths){try{const file=await this.json(base+'/contents/'+path.split('/').map(encodeURIComponent).join('/')+'?'+new URLSearchParams({ref}),{headers:this.headers(),fetcher:this.fetcher,maxBytes:200000});if(file.path!==path)throw new RadarError('PATH_MISMATCH','返回文件路径不一致');fileMaterial(file,'source:'+path);}catch(e){propagateLimit(e);warnings.push(path+'：'+(e as Error).message);}}
     return {item,evidence,warnings};
   }
-  async trending(period:RankingPeriod='daily'){if(!['daily','weekly'].includes(period))throw new RadarError('INVALID_PERIOD','榜单周期只支持daily或weekly');const response=await this.request(`https://github.com/trending?since=${period}`,{fetcher:this.fetcher,maxBytes:2000000,timeoutMs:30000});return {rows:parseTrending(response.text,now(),period).slice(0,10),html:response.text,collectedAt:now()};}
+  async trending(period:RankingPeriod='daily'){
+    if(!['daily','weekly'].includes(period))throw new RadarError('INVALID_PERIOD','榜单周期只支持daily或weekly');
+    const response=await this.request(`https://github.com/trending?since=${period}`,{fetcher:this.fetcher,maxBytes:2000000,timeoutMs:30000}),rows=parseTrending(response.text,now(),period).slice(0,10);
+    for(const row of rows){
+      if(row.description.trim())continue;
+      let material=this.rankingReadmes.get(row.repo);
+      if(!material){
+        const url=`https://api.github.com/repos/${row.repo}/readme`;
+        try{
+          const meta=await this.json(`https://api.github.com/repos/${row.repo}`,{headers:this.headers()});
+          if(meta.private!==false||meta.visibility&&meta.visibility!=='public')throw new RadarError('PUBLIC_ONLY','榜单README回退只读取当前确认公开的仓库');
+          const readme=await this.request(url,{headers:{...this.headers(),Accept:'application/vnd.github.raw+json'},maxBytes:600000});material={description:readme.text.trim().slice(0,4000),descriptionSource:row.url+'#readme'};
+        }
+        catch(error){propagateLimit(error);if(!(error instanceof RadarError&&error.details.status===404))throw error;material={description:'',descriptionSource:row.source};}
+        this.rankingReadmes.set(row.repo,material);
+      }
+      Object.assign(row,material,{descriptionMissing:!material.description.trim()});
+    }
+    return {rows,html:response.text,collectedAt:now()};
+  }
 }

@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {mkdirSync,readFileSync,writeFileSync,renameSync,existsSync} from 'node:fs';
 import {resolve} from 'node:path';
-import {RadarError,now,normalizeText,stableId,publicError,isVideoTextKind} from './model.ts';
+import {RadarError,now,normalizeText,stableId,publicError,isVideoTextKind,hash} from './model.ts';
 import type {Topic,Item,Evidence} from './model.ts';import type {Store} from './store.ts';
 import {freezeBilibiliSample} from './bilibili-sample.ts';
 import {beijingDate} from './time.ts';
@@ -30,9 +30,9 @@ export function interestCounts(report:any){const rows=Array.isArray(report?.resu
 function readingAcquisition(store:Store,key:string,cached:boolean){
  const item=store.item(key),evidence=store.currentEvidence(key),parts=item?.metadata?.asrPages;
  const asr=Array.isArray(parts)?parts.filter(p=>p&&typeof p==='object'&&p.page===1).map(p=>({page:1,state:p.state,reason:p.reason,characters:p.characters,sourceDuration:p.sourceDuration,processedRange:p.processedRange})):[];
- return {cached,videoText:evidence.filter(e=>isVideoTextKind(e.kind,1)&&!!e.text.trim()).map(e=>({kind:e.kind,characters:e.text.length})),asr,agentRead:false};
+ return {cached,videoText:evidence.filter(e=>isVideoTextKind(e.kind,1)&&!!e.text.trim()).map(e=>({kind:e.kind,characters:e.text.length})),asr,visual:item?.metadata?.ocrPages||[],agentRead:false};
 }
-export async function runInterestRound(args:{store:Store;dataDir:string;topicId:string;source:InterestSources;readLimit?:number;excludeKeys?:string[];analyze:(topicId:string,itemKey:string,signal?:AbortSignal,commitGuard?:()=>void)=>Promise<any>;signal?:AbortSignal}){
+export async function runInterestRound(args:{store:Store;dataDir:string;topicId:string;source:InterestSources;readLimit?:number;recoverUnread?:boolean;excludeKeys?:string[];analyze:(topicId:string,itemKey:string,signal?:AbortSignal,commitGuard?:()=>void)=>Promise<any>;signal?:AbortSignal}){
  const {store,source}=args,limit=args.readLimit??3;if(!Number.isSafeInteger(limit)||limit<1||limit>3)throw new RadarError('INVALID_BUDGET','一轮最多读取3条视频');
  const topic=ensureTopic(store,args.topicId),lease=claimRound(store,topic.id),id=randomUUID();
  const report:any={id,topicId:topic.id,topicRevision:topic.revision,startedAt:now(),discovered:0,prefiltered:0,results:[],sources:[],candidateBudget:20,readLimit:limit,commentsRead:0,emailSent:false};
@@ -44,27 +44,32 @@ export async function runInterestRound(args:{store:Store;dataDir:string;topicId:
   checkpoint();report.stage='discovering';const feed=await source.recommendations(12);checkpoint();if(feed.authenticated!==true)throw new RadarError('AUTH_REQUIRED','未确认登录推荐，不降级为匿名热门');report.sources.push({kind:'recommendation',state:'ok',count:feed.items.length,authenticated:true});
   const candidates=new Map<string,InterestCandidate>();
   const add=(items:InterestCandidate[],kind:string)=>{for(const row of items){if(candidates.size>=20)break;try{const bvid=stableId('bilibili',row.bvid);if(typeof row.title!=='string'||!row.title.trim()||row.title.length>500||!/^\d{1,20}$/.test(row.authorId)||BigInt(row.authorId)===0n)continue;if(!candidates.has(bvid))candidates.set(bvid,{...row,bvid,source:kind});}catch{continue;}}};
+  if(args.recoverUnread){const pending=store.db.prepare("SELECT data FROM jobs WHERE id LIKE 'video-recovery:%' AND state='pending' ORDER BY updated_at LIMIT 4").all() as any[];add(pending.map(r=>JSON.parse(r.data)).filter(r=>r.topicId===topic.id&&Date.parse(r.nextAt)<=Date.now()).map(r=>r.candidate),'recovery');}
   add(feed.items,'recommendation');
   for(const keyword of topic.keywords.slice(0,2)){if(candidates.size>=20)break;checkpoint();try{const rows=await source.search(keyword,Math.min(4,20-candidates.size));checkpoint();add(rows,'search');report.sources.push({kind:'search',state:'ok',keyword,count:rows.length});}catch(error){if(error instanceof RadarError&&['TOPIC_CHANGED','CANCELLED','LEASE_LOST'].includes(error.code))throw error;const safe=publicError(error);report.sources.push({kind:'search',state:'failed',keyword,code:safe.code});report.discoveryPartial=true;if(['AUTH_REQUIRED','RATE_LIMITED'].includes(safe.code))report.stoppedReason=safe.code;break;}}
   checkpoint();report.discovered=candidates.size;const notified=new Set([...notifiedVideoKeys(store),...(args.excludeKeys||[])]);
   const ranked=[...candidates.values()].map(row=>({...row,score:interestScore(row,topic)})).filter(row=>row.score>0&&!notified.has('bilibili:'+row.bvid)).sort((a,b)=>b.score-a.score||a.bvid.localeCompare(b.bvid));
   report.prefiltered=ranked.length;report.notifiedSkipped=[...candidates.values()].filter(row=>notified.has('bilibili:'+row.bvid)).map(row=>'bilibili:'+row.bvid);
   // Title matches only prioritize reading; only cited subtitle judgments can enter a sample.
-  const chosen:typeof ranked=[],owners=new Set<string>();for(const row of ranked)if(!owners.has(row.authorId)&&chosen.length<limit){chosen.push(row);owners.add(row.authorId);}for(const row of ranked)if(chosen.length<limit&&!chosen.includes(row))chosen.push(row);
+  const attemptLimit=args.recoverUnread?Math.min(9,limit*3):limit;
+  const chosen:typeof ranked=[],owners=new Set<string>();for(const row of ranked)if(!owners.has(row.authorId)&&chosen.length<attemptLimit){chosen.push(row);owners.add(row.authorId);}for(const row of ranked)if(chosen.length<attemptLimit&&!chosen.includes(row))chosen.push(row);
+  const pending=(row:InterestCandidate,reason:string)=>{if(!args.recoverUnread)return;const key='video-recovery:'+hash(topic.id+':'+row.bvid),old=store.job(key) as any,previous=old?JSON.parse(old.data):{},attempts=(previous.attempts||0)+1,data={topicId:topic.id,candidate:row,reason,attempts,nextAt:new Date(Date.now()+(attempts<3?30*60000:6*3600000)).toISOString(),state:'pending_reading'};store.db.prepare('INSERT INTO jobs VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,data=excluded.data,updated_at=excluded.updated_at').run(key,'pending','reading-recovery','',0,JSON.stringify(data),now());};
   if(!report.stoppedReason)for(const row of chosen){
+   if(args.recoverUnread&&report.results.filter(r=>r.state==='assessed').length>=limit)break;
    checkpoint();report.stage='reading';const key='bilibili:'+row.bvid,result:any={itemKey:key,title:row.title,url:'https://www.bilibili.com/video/'+row.bvid,authorUid:row.authorId,source:row.source,state:'reading'};report.results.push(result);checkpoint();
    try{
     const current=store.item(key),subtitle=store.currentEvidence(key).some(e=>e.text.trim()&&isVideoTextKind(e.kind,1));
-    const cached=!!current&&current.authorId===row.authorId&&subtitle;
+    const cached=!!current&&current.authorId===row.authorId&&subtitle&&videoBodyQuality(store.currentEvidence(key),undefined,1).sufficient;
     if(!cached){const read=await source.read(row.bvid,{pages:[1],expectedAuthorUid:row.authorId,includeDanmaku:true});checkpoint();if(read.item.authorId!==row.authorId)throw new RadarError('AUTHOR_MISMATCH','实际作者与候选不符');store.capture(read.item,read.evidence,checkpoint);result.warnings=read.warnings;}
     checkpoint();result.acquisition=readingAcquisition(store,key,cached);
-    const blocked=result.acquisition.asr.find(p=>p.state==='failed'&&['AUTH_REQUIRED','CREDENTIAL_INVALID','ACCESS_DENIED','RATE_LIMITED'].includes(p.reason));
+    const blocked=[...result.acquisition.asr,...result.acquisition.visual].find(p=>['AUTH_REQUIRED','CREDENTIAL_INVALID','ACCESS_DENIED','RATE_LIMITED'].includes(p.reason));
     if(blocked){result.state='no_subtitle';result.code=blocked.reason;report.stoppedReason=blocked.reason;break;}
-    if(!store.currentEvidence(key).some(e=>e.text.trim()&&isVideoTextKind(e.kind,1))){result.state='no_subtitle';continue;}
+    if(!store.currentEvidence(key).some(e=>e.text.trim()&&isVideoTextKind(e.kind,1))){result.state='no_subtitle';result.recovery='pending';pending(row,result.acquisition.asr[0]?.reason||'NO_READABLE_BODY');continue;}
     result.acquisition.selectionGate=videoBodyQuality(store.currentEvidence(key),undefined,1);
-    if(!result.acquisition.selectionGate.sufficient){result.state='insufficient_body';result.code='INSUFFICIENT_VIDEO_BODY';result.selected=false;continue;}
+    if(!result.acquisition.selectionGate.sufficient){result.state='insufficient_body';result.code='INSUFFICIENT_VIDEO_BODY';result.selected=false;pending(row,result.code);continue;}
     report.stage='analyzing';checkpoint();const analysis=await args.analyze(topic.id,key,signal,checkpoint);checkpoint();const assessment=analysis.assessment;if(!assessment||assessment.simulation===true)throw new RadarError('INVALID_AGENT_OUTPUT','本轮需要真实正文判断');
     result.state='assessed';result.title=store.item(key).title;result.selected=assessment.selected===true;result.summaryZh=assessment.summaryZh;result.reused=analysis.reused===true;
+    if(args.recoverUnread)store.db.prepare("UPDATE jobs SET state='done',updated_at=? WHERE id=?").run(now(),'video-recovery:'+hash(topic.id+':'+row.bvid));
     const ids=new Set(assessment.readEvidenceIds||[]);result.acquisition.agentRead=store.currentEvidence(key).some(e=>ids.has(e.id)&&isVideoTextKind(e.kind,1));
     result.acquisition.selectionGate=videoBodyQuality(store.currentEvidence(key),assessment,1);
     if(result.selected&&!result.acquisition.selectionGate.sufficient){result.agentSelected=true;result.selected=false;result.code='INSUFFICIENT_VIDEO_BODY';}

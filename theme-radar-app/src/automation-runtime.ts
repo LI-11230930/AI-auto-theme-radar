@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {mkdirSync,writeFileSync} from 'node:fs';
 import {resolve} from 'node:path';
-import {HostRunner} from './runner.ts';
+import {HostRunner,validateModelTaskResult} from './runner.ts';
 import {RadarError,now,hash,publicError} from './model.ts';
 import type {Batch} from './model.ts';
 import {beijingDate} from './time.ts';
@@ -20,6 +20,7 @@ import type {AutomationPlan} from './automation-plan.ts';
 import type {Store} from './store.ts';
 import {absolutePreviewUrl} from './operator-url.ts';
 import {frozenContentHash,oneOffApproval} from './automation-outbox.ts';
+import {savePersonalConfiguration} from './platform-controls.ts';
 
 const pause=(ms:number)=>new Promise<void>(resolve=>setTimeout(resolve,ms));
 function batchForRun(p:AutomationPlan,run:any):Batch{const end=new Date(run.dueAt),date=beijingDate(end),slot=new Date(end.getTime()+28800000).toISOString().slice(11,16);return {date,slot,key:run.id,dueAt:end.toISOString(),startAt:occurrenceStart(p,run.dueAt),endAt:end.toISOString(),timezone:'Asia/Shanghai'};}
@@ -29,7 +30,8 @@ export class AutomationRuntime{
  start(){this.timer=setInterval(()=>{try{this.tick();}catch{}},10000);this.timer.unref?.();}
  async close(){this.closed=true;clearInterval(this.timer);for(const c of this.active.values())c.abort();while(this.active.size)await pause(10);}
  status(){return {plans:plans(this.store).map(p=>({...p,scheduleStatus:scheduleStatus(p),blockedReason:this.blocked.get(p.id)||null,availability:p.execution==='attached'?'requires_online_agent_session':p.agent==='WorkBuddy'?'unsupported_background':this.config.runners[p.agent]?.command?'cli_configured_unverified':'missing_cli'})),runs:runRows(this.store).map(({body,plan,...run})=>({...run,...(run.preview?{absolutePreview:absolutePreviewUrl(this.config,run.preview)}:{}),...(body?{contentHash:frozenContentHash(body),subject:body.subject}:{}),deliveryState:run.deliveryId?this.store.delivery(run.deliveryId)?.state:null,emailSent:run.deliveryId?this.store.delivery(run.deliveryId)?.state==='sent_confirmed':false})),onlineAgents:[...this.online].filter(([,at])=>Date.now()-at<30000).map(([agent])=>agent),timezone:'Asia/Shanghai',scheduler:'local_service_only; computer and service must stay running',automaticSendingDefault:false};}
- save(input:any,expectedRevision?:number){const p=savePlan(this.store,input,expectedRevision);for(const row of runRows(this.store))if(row.planId===p.id&&this.active.has(row.id))this.active.get(row.id)!.abort();return p;}
+ invalidatePlans(ids:string[]){for(const [id,controller] of this.active){const data=this.runningData.get(id)||JSON.parse((this.store.job(id) as any)?.data||'{}');if(ids.includes(data.planId))controller.abort();}}
+ save(input:any,expectedRevision?:number){if(input?.id==='personal-radar')return savePersonalConfiguration(this,input,expectedRevision).plan;const p=savePlan(this.store,input,expectedRevision);this.invalidatePlans([p.id]);return p;}
  cancel(id:string){const controller=this.active.get(id);if(!controller)throw new RadarError('RUN_NOT_ACTIVE','本进程无该运行；若原进程退出，等待租约失效，不重新发信');controller.abort();return {cancelRequested:true};}
  tick(clock=Date.now()){
   if(this.closed)return;
@@ -53,14 +55,14 @@ export class AutomationRuntime{
   const id='automation-model:'+randomUUID(),token=randomUUID(),expires=Date.now()+600000,data={runId,agent:p.agent,prompt,schema,status:'pending',result:null};
   const parent=this.runningData.get(runId),previousStage=parent?.stage;if(parent)parent.stage='awaiting_model';
   this.store.db.prepare('INSERT INTO jobs VALUES(?,?,?,?,?,?,?)').run(id,'running',p.agent,token,expires,JSON.stringify(data),now());
-  try{while(Date.now()<expires){if(signal?.aborted||this.closed||this.active.get(runId)?.signal.aborted)throw new RadarError('CANCELLED','模型任务已取消');const row=this.store.job(id) as any;if(row.state!=='running')throw new RadarError('LEASE_LOST','模型任务已失效');const current=JSON.parse(row.data);if(current.status==='completed'){this.store.finish(id,token);return {stdout:JSON.stringify(current.result),stderr:'',code:0};}await pause(100);}throw new RadarError('RUNNER_TIMEOUT','等待当前宿主模型超过10分钟；未切换其他宿主');}
+  try{while(Date.now()<expires){if(signal?.aborted||this.closed||this.active.get(runId)?.signal.aborted)throw new RadarError('CANCELLED','模型任务已取消');const row=this.store.job(id) as any;if(row.state!=='running')throw new RadarError('LEASE_LOST','模型任务已失效');const current=JSON.parse(row.data);if(current.status==='rejected')throw new RadarError('INVALID_AGENT_OUTPUT',current.validationError||'模型结果连续校验失败');if(current.status==='completed'){this.store.finish(id,token);return {stdout:JSON.stringify(current.result),stderr:'',code:0};}await pause(100);}throw new RadarError('RUNNER_TIMEOUT','等待当前宿主模型超过10分钟；未切换其他宿主');}
   catch(error){try{this.store.finish(id,token,'cancelled');}catch{}throw error;}finally{if(parent?.stage==='awaiting_model')parent.stage=previousStage;}
  }
  async next(agent:string,waitMs=0,sessionId='local-session'){
   if(!automationAgents.includes(agent)||!Number.isSafeInteger(waitMs)||waitMs<0||waitMs>20000)throw new RadarError('INVALID_INPUT','宿主或等待时间无效，等待最多20秒');
   const end=Date.now()+waitMs;
   do{this.online.set(agent,Date.now());this.tick();const rows=this.store.db.prepare("SELECT id,token,data,expires_at FROM jobs WHERE id LIKE 'automation-model:%' AND state='running' AND owner=? AND expires_at>? ORDER BY updated_at,rowid LIMIT 1").all(agent,Date.now()) as any[];
-   for(const row of rows){const task=this.store.tx(()=>{const latest=this.store.job(row.id) as any,d=JSON.parse(latest.data);if(d.status!=='pending'||d.claimedSession&&d.claimedSession!==sessionId)return null;const run=this.store.job(d.runId) as any;if(!run||run.state!=='running'||run.expires_at<=Date.now())return null;d.claimedSession=sessionId;this.store.db.prepare('UPDATE jobs SET data=? WHERE id=?').run(JSON.stringify(d),row.id);return {id:row.id,token:row.token,agent,runId:d.runId,prompt:d.prompt,schema:d.schema,expiresAt:new Date(row.expires_at).toISOString()};});if(task)return {task,instruction:'用当前宿主模型阅读prompt并按schema返回JSON，通过automation_submit提交；不得自行访问平台或发信；宿主名为自报，非身份认证'};}
+   for(const row of rows){const task=this.store.tx(()=>{const latest=this.store.job(row.id) as any,d=JSON.parse(latest.data);if(d.status!=='pending'||d.claimedSession&&d.claimedSession!==sessionId)return null;const run=this.store.job(d.runId) as any;if(!run||run.state!=='running'||run.expires_at<=Date.now())return null;d.claimedSession=sessionId;this.store.db.prepare('UPDATE jobs SET data=? WHERE id=?').run(JSON.stringify(d),row.id);return {id:row.id,token:row.token,agent,runId:d.runId,prompt:d.prompt,schema:d.schema,...(d.validationError?{validationError:d.validationError,correctionsRemaining:3-d.validationFailures}:{}),expiresAt:new Date(row.expires_at).toISOString()};});if(task)return {task,instruction:'用当前宿主模型阅读prompt并按schema返回JSON，通过automation_submit提交；accepted=false且retryable=true时只纠正原任务，不创建新轮次；不得自行访问平台或发信；宿主名为自报，非身份认证'};}
    if(Date.now()>=end||this.closed)break;await pause(100);
   }while(true);return {task:null,instruction:'没有待处理模型任务；需要持续参与已启用计划时，在当前会话继续调用next；本服务不能主动唤醒已关闭的Agent应用'};
  }
@@ -70,6 +72,8 @@ export class AutomationRuntime{
   const r=JSON.parse(run.data),p=planById(this.store,r.planId);if(!p||p.revision!==r.planRevision||this.active.get(d.runId)?.signal.aborted)throw new RadarError('PLAN_CHANGED','父计划已变化或取消');
   if(!input.result||typeof input.result!=='object'||Array.isArray(input.result)||JSON.stringify(input.result).length>150000)throw new RadarError('INVALID_AGENT_OUTPUT','结果需要有界JSON对象');
   if(d.status!=='pending')throw new RadarError('ALREADY_SUBMITTED','任务已提交，不重复覆盖');
+  const issue=validateModelTaskResult(d.prompt,input.result);
+  if(issue){d.validationFailures=(d.validationFailures||0)+1;d.validationError=issue;if(d.validationFailures>=3)d.status='rejected';this.store.db.prepare('UPDATE jobs SET data=?,updated_at=? WHERE id=?').run(JSON.stringify(d),now(),row.id);return {accepted:false,code:'INVALID_AGENT_OUTPUT',retryable:d.validationFailures<3,taskId:row.id,correctionsRemaining:Math.max(0,3-d.validationFailures),error:issue,instruction:d.validationFailures<3?'原任务仍待提交。仅按原prompt/schema纠正本任务，使用相同taskId和token重新submit；不要另开轮次，也不要把未接受结果计为有效判断。':'本任务已连续三次校验失败，停止本轮，不补开第二轮。'};}
   d.status='completed';d.result=input.result;this.store.db.prepare('UPDATE jobs SET data=?,updated_at=? WHERE id=?').run(JSON.stringify(d),now(),row.id);return {accepted:true,semanticValidation:'pipeline will validate citations, summaries and schema before preparing mail'};
  });}
  async execute(p:AutomationPlan,lease:any,signal:AbortSignal){
@@ -82,13 +86,13 @@ export class AutomationRuntime{
    const runner=p.execution==='attached'?new AttachedRunner(p.agent,{},resolve(config.dataDir,'runner',randomUUID()),config.limits):new HostRunner(p.agent,config.runners[p.agent],resolve(config.dataDir,'runner',randomUUID()),config.limits);
    const sections:{text:string;html:string}[]=[],keys:string[]=[],windows:any[]=[];
    if(p.platforms.includes('github')){
-    run.stage='github';check();const result=await (this.dependencies.github||runGithub)({store,source:this.dependencies.githubSource||new GitHubSource(undefined,store),runner,topicId:'*',topicIds:p.topicIds,batch,outputDir:resolve(config.dataDir,'previews'),recipient:p.recipient||'preview@example.invalid',limit:p.githubReadLimit,selectedLimit:5,signal,mailTemplate:loadMailTemplate(config.dataDir),freezeDelivery:false});check();
-    run.results.push({platform:'github',state:result.state,selected:result.selected,errors:result.errors});if(result.state!=='prepared'||!result.digest?.contentReady)throw new RadarError('CONTENT_INCOMPLETE','GitHub内容未齐备，本轮保留档案，不投递部分邮件');if(result.selected>0||result.digest.audit?.daily?.length||result.digest.audit?.weekly?.length)sections.push(result.digest);keys.push(...result.itemKeys);windows.push(...result.collectionWindows||[]);
+    run.stage='github';check();const result=await (this.dependencies.github||runGithub)({store,source:this.dependencies.githubSource||new GitHubSource(undefined,store),runner,topicId:'*',topicIds:p.topicIds,batch,outputDir:resolve(config.dataDir,'previews'),recipient:p.recipient||'preview@example.invalid',limit:p.githubReadLimit,selectedLimit:5,signal,mailTemplate:loadMailTemplate(config.dataDir),freezeDelivery:false,allowPartialDiscovery:true});check();
+    run.results.push({platform:'github',state:result.state,selected:result.selected,counts:result.counts,blockingIssues:result.blockingIssues,warnings:result.warnings||result.errors,discoveryIncompleteTopics:(result.collectionWindows||[]).filter((w:any)=>w.discoveryIncomplete).map((w:any)=>w.topicId),errors:result.state==='prepared'?[]:result.errors});if(result.state!=='prepared'||!result.digest?.contentReady)throw new RadarError('CONTENT_INCOMPLETE','GitHub必需正文、模型结果或邮件栏目未齐备；具体原因见blockingIssues，普通阅读提示不阻止投递');if(result.selected>0||result.digest.audit?.daily?.length||result.digest.audit?.weekly?.length)sections.push(result.digest);keys.push(...result.itemKeys);windows.push(...result.collectionWindows||[]);
    }
    let remaining=p.readLimit;const readKeys:string[]=[];
    for(const topic of store.topics().filter(t=>p.topicIds.includes(t.id)&&t.platforms.includes('bilibili')&&p.platforms.includes('bilibili'))){
     if(!remaining)break;run.stage='bilibili';check();const source=new BilibiliSource({credentialFile:config.bilibili.credentialFile||undefined}),feed=new BilibiliInterestSource(source);
-    const result=await (this.dependencies.bilibili||runInterestRound)({store,dataDir:config.dataDir,topicId:topic.id,readLimit:remaining,excludeKeys:readKeys,signal,source:this.dependencies.bilibiliSource||{recommendations:(n:number)=>feed.recommendations(n),search:(k:string,n:number)=>source.search(k,n),read:(b:string,o:any)=>readConfiguredBilibili(config,b,o,signal,source)},analyze:(t:string,k:string,s:AbortSignal,g:any)=>analyzeArchived({store,runner,topicId:t,itemKey:k,signal:s,commitGuard:()=>{check();g?.();}})});check();remaining-=result.results.length;readKeys.push(...result.results.map((r:any)=>r.itemKey));
+    const result=await (this.dependencies.bilibili||runInterestRound)({store,dataDir:config.dataDir,topicId:topic.id,readLimit:remaining,recoverUnread:true,excludeKeys:readKeys,signal,source:this.dependencies.bilibiliSource||{recommendations:(n:number)=>feed.recommendations(n),search:(k:string,n:number)=>source.search(k,n),read:(b:string,o:any)=>readConfiguredBilibili(config,b,o,signal,source)},analyze:(t:string,k:string,s:AbortSignal,g:any)=>analyzeArchived({store,runner,topicId:t,itemKey:k,signal:s,commitGuard:()=>{check();g?.();}})});check();remaining-=Math.max(1,result.counts.assessed);readKeys.push(...result.results.map((r:any)=>r.itemKey));
     const skippedReasons=result.results.filter((r:any)=>r.state==='no_subtitle'||r.state==='insufficient_body'||r.state==='failed').map((r:any)=>({state:r.state,code:r.code||r.acquisition?.asr?.find((a:any)=>a.reason)?.reason||null}));
     run.results.push({platform:'bilibili',topicId:topic.id,counts:result.counts,skippedReasons,stoppedReason:result.stoppedReason});if(result.stage==='stopped'||result.stoppedReason||result.sampleIssue)throw new RadarError('CONTENT_INCOMPLETE','B站轮次未正常完成，保留取得结果，不自动发送');
     if(result.sample){const sample=readBilibiliSample(config.dataDir,result.sample.id);sections.push(sample);keys.push(...sample.entries.map((e:any)=>e.itemKey));windows.push(...sample.collectionWindows||[]);}
@@ -111,13 +115,13 @@ export class AutomationRuntime{
   const attemptId='automation-attempt:'+hash(run.id);if(this.store.job(attemptId))throw new RadarError('MAIL_ALREADY_CLAIMED','该轮已领取发送，失败或未知均不重发');
   const date=beijingDate(),attempts=this.store.db.prepare("SELECT data FROM jobs WHERE id LIKE 'automation-attempt:%'").all() as any[];
   const recipient=once?.recipient||p.recipient!;
-  if(attempts.filter(row=>{const d=JSON.parse(row.data);return d.date===date&&d.recipient.toLowerCase()===recipient.toLowerCase();}).length>=p.maxMessagesPerDay)throw new RadarError('MAIL_DAILY_LIMIT','该收件人当日自动计划发送尝试已达当前上限');
+  if(attempts.filter(row=>{const d=JSON.parse(row.data);return d.date===date&&d.recipient.toLowerCase()===recipient.toLowerCase()&&(p.mailBudgetScope!=='plan'||d.planId===p.id);}).length>=p.maxMessagesPerDay)throw new RadarError('MAIL_DAILY_LIMIT','当日发送尝试已达该计划的上限');
   {const delivery=this.store.delivery(run.deliveryId),body=JSON.parse(delivery.body);if(delivery.state==='prepared'&&body.attemptDate!==date){
    const quota=this.store.dailyQuota(date),items=this.store.deliveryItems(delivery.id);
    for(const platform of ['github','bilibili','xiaohongshu'])if(items.filter(i=>this.store.item(i.item_key)?.platform===platform).length>quota.platforms[platform].remaining)throw new RadarError('DAILY_QUOTA','跨日领取时当日精选配额不足，保留草稿且不发送');
    body.attemptDate=date;const serialized=JSON.stringify(body);this.store.db.prepare('UPDATE deliveries SET body=?,body_hash=?,updated_at=? WHERE id=?').run(serialized,hash(serialized),now(),delivery.id);
   }}
-  claim();this.store.db.prepare('INSERT INTO jobs VALUES(?,?,?,?,?,?,?)').run(attemptId,'done',p.id,'',0,JSON.stringify({runId:run.id,recipient,date}),now());return true;
+  claim();this.store.db.prepare('INSERT INTO jobs VALUES(?,?,?,?,?,?,?)').run(attemptId,'done',p.id,'',0,JSON.stringify({runId:run.id,planId:p.id,recipient,date}),now());return true;
  });}
  claimMail(input:{runId:string;agent:string;from:string}){
   const row=this.store.job(input.runId) as any;if(!row||row.state!=='done')throw new RadarError('INVALID_STATE','轮次尚未正常完成');const run=JSON.parse(row.data),p=planById(this.store,run.planId);

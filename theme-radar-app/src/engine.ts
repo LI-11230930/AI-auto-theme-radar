@@ -14,7 +14,7 @@ import {now} from './model.ts';
 import type { Assessment, Topic, Item, Evidence, Batch, Ranking } from './model.ts';
 export type Runner={name?:string;describeRankings?:(rows:Ranking[],signal?:AbortSignal)=>Promise<Ranking[]>;assess:(topic:Topic,item:Item,evidence:Evidence[],signal?:AbortSignal)=>Promise<Assessment>};
 
-export async function runGithub(options:{store:Store;source:GitHubSource;runner:Runner;topicId:string;topicIds?:string[];freezeDelivery?:boolean;batch:Batch;outputDir:string;recipient?:string|null;limit?:number;selectedLimit?:number;signal?:AbortSignal;verification?:boolean;mailTemplate?:any}){
+export async function runGithub(options:{store:Store;source:GitHubSource;runner:Runner;topicId:string;topicIds?:string[];freezeDelivery?:boolean;allowPartialDiscovery?:boolean;batch:Batch;outputDir:string;recipient?:string|null;limit?:number;selectedLimit?:number;signal?:AbortSignal;verification?:boolean;mailTemplate?:any}){
   const {store,source,runner,batch}=options,includeSection=(id:string)=>!options.mailTemplate||options.mailTemplate.github.sections.includes(id);
   const recipient=options.recipient;if(!isEmailAddress(recipient))throw new RadarError('RECIPIENT_REQUIRED','请先在本地配置填写自己的收件邮箱；尚未采集或准备邮件');
   const topics=store.topics().filter(t=>t.enabled&&t.platforms.includes('github')&&(options.topicId==='*'||t.id===options.topicId)&&(!options.topicIds||options.topicIds.includes(t.id)));
@@ -22,7 +22,7 @@ export async function runGithub(options:{store:Store;source:GitHubSource;runner:
   if(options.limit!==undefined&&(!Number.isSafeInteger(options.limit)||options.limit<1))throw new RadarError('INVALID_BUDGET','候选总预算必须为正整数');
   if(options.selectedLimit!==undefined&&(!Number.isSafeInteger(options.selectedLimit)||options.selectedLimit<1))throw new RadarError('INVALID_BUDGET','精选预算必须为正整数');
   const selectedLimit=Math.min(options.selectedLimit??5,5);
-  const totalBudget=Math.min(options.limit||20,20);let attempted=0;
+  const totalBudget=Math.min(options.limit||20,20);let attempted=0,cachedReads=0,newAssessments=0,reusedAssessments=0;
   const jobId=`github-digest:${batch.key}`,priorJob=store.job(jobId) as any,priorCursor=priorJob?JSON.parse(priorJob.data):{};
   source.store=store;
   const existing=store.delivery(deliveryKey(recipient,batch));
@@ -55,7 +55,7 @@ export async function runGithub(options:{store:Store;source:GitHubSource;runner:
       let candidates:any[]=[];
       try{const discovered=await source.search(topic,Math.min(Math.max(allocation*4,10),50),window);candidates=discovered.items;
         store.log('github_discovery',{jobId,topicId:topic.id,returned:candidates.length,total:discovered.total,incomplete:discovered.incomplete,query:discovered.query});
-        if(discovered.incomplete){topicFailed=true;errors.push(topic.name+'：搜索结果不完整');}}catch(e){topicFailed=true;errors.push(topic.name+'：主题搜索 '+(e as Error).message);if((e as RadarError).code==='RATE_LIMITED'){retryAt=String((e as RadarError).details.retryAt);break topicLoop;}}
+        if(discovered.incomplete){window.discoveryIncomplete=true;errors.push(topic.name+'：搜索返回部分候选，已取得内容仍逐条校验；本主题不标记完整覆盖、不推进覆盖窗口');}}catch(e){topicFailed=true;errors.push(topic.name+'：主题搜索 '+(e as Error).message);if((e as RadarError).code==='RATE_LIMITED'){retryAt=String((e as RadarError).details.retryAt);break topicLoop;}}
       // Keep one new-project exploration slot; use the other bounded slots for
       // stronger public signals, without imposing a minimum-star gate.
       const exploratory=[...candidates].sort((a,b)=>(Date.parse(b.createdAt)||0)-(Date.parse(a.createdAt)||0))[0],mature=[...candidates].sort((a,b)=>(b.stars||0)-(a.stars||0));
@@ -65,6 +65,7 @@ export async function runGithub(options:{store:Store;source:GitHubSource;runner:
         try{const cached=materials[repo],key='github:'+repo;
           const stored=cached&&store.fingerprint(key)===cached.fingerprint?store.evidence(key).filter(e=>cached.evidenceIds.includes(e.id!)):[];
           const collected=cached&&stored.length===cached.evidenceIds.length?{item:store.item(key) as Item,evidence:stored,warnings:cached.warnings}:await source.read(repo,{window});
+          if(cached&&stored.length===cached.evidenceIds.length)cachedReads++;
           const activity=activityInWindow(collected.item,window);collected.item.metadata.selection={...activity,window};
           if(collected.evidence.every(e=>e.kind==='repository-metadata'||e.kind==='release')&&!activity.eligible){
             filtered[activity.reason]=(filtered[activity.reason]||0)+1;
@@ -83,13 +84,16 @@ export async function runGithub(options:{store:Store;source:GitHubSource;runner:
           if(store.alreadyRecommended(collected.item.key)){errors.push(repo+'：内容未变化，已推荐或已有待投递记录；日榜仍保留');completed.add(topic.id+':'+collected.item.key);continue;}
           const cursorKey=topic.id+':'+collected.item.key+':'+captured.fingerprint;
           let assessment=completed.has(cursorKey)?store.assessments(topic.id).find(a=>a.itemKey===collected.item.key&&a.topicRevision===topic.revision&&a.itemFingerprint===captured.fingerprint&&a.readEvidenceIds.every(id=>evidence.some(e=>e.id===id))):null;
-          if(!assessment){try{const startedAt=now(),snapshot=store.readingSnapshot(collected.item.key),bundle=materialPrompt(topic,collected.item,evidence);assessment=await runner.assess(topic,collected.item,evidence,options.signal);check();if(options.freezeDelivery===false){assessment=tracedAssessment(assessment,collected.item,bundle,snapshot,startedAt);store.saveArchivedAssessment(topic.id,topic.revision,snapshot,assessment);}else store.saveAssessment(topic.id,assessment);}catch(e){modelFailures++;throw e;}}
+          if(!assessment&&options.freezeDelivery===false){const snapshot=store.readingSnapshot(collected.item.key);assessment=store.assessments(topic.id).find(a=>a.itemKey===collected.item.key&&a.topicRevision===topic.revision&&a.itemFingerprint===captured.fingerprint&&a.agent===runner.name&&!a.simulation&&a.reading?.snapshot===snapshot&&a.readEvidenceIds.every(id=>evidence.some(e=>e.id===id)))||null;}
+          if(assessment)reusedAssessments++;
+          else{try{const startedAt=now(),snapshot=store.readingSnapshot(collected.item.key),bundle=materialPrompt(topic,collected.item,evidence);assessment=await runner.assess(topic,collected.item,evidence,options.signal);check();if(options.freezeDelivery===false){assessment=tracedAssessment(assessment,collected.item,bundle,snapshot,startedAt);store.saveArchivedAssessment(topic.id,topic.revision,snapshot,assessment);}else store.saveAssessment(topic.id,assessment);newAssessments++;}catch(e){modelFailures++;throw e;}}
           completed.add(cursorKey);entries.push({item:collected.item,evidence,assessment});
           store.log('github_item',{key:collected.item.key,change:captured.change,topicId:topic.id});
           checkpoint({stage:'reading',completed:[...completed],repo,topicId:topic.id});
         }catch(e){topicFailed=true;if((e as RadarError).code==='CANCELLED'||(e as RadarError).code==='LEASE_LOST')throw e;errors.push(repo+'：'+(e as Error).message);if((e as RadarError).code==='RATE_LIMITED')retryAt=String((e as RadarError).details.retryAt);if(['RATE_LIMITED','AUTH_REQUIRED','MODEL_QUOTA_EXCEEDED','PROVIDER_CHANNEL_REJECTED','RUNNER_NOT_FOUND','AGENT_FAILED','RUNNER_TIMEOUT','INVALID_AGENT_OUTPUT'].includes((e as RadarError).code))break topicLoop;}
       }
-      window.completed=!topicFailed;
+      window.processingCompleted=!topicFailed;
+      window.completed=!topicFailed&&!window.discoveryIncomplete;
     }
     check();
     const remaining=options.verification||runner.name==='fixture'?selectedLimit:store.dailyQuota(batch.date).platforms.github.remaining;
@@ -99,11 +103,12 @@ export async function runGithub(options:{store:Store;source:GitHubSource;runner:
     errors.push('时间过滤跳过：'+JSON.stringify(filtered));
     if(options.verification)errors.unshift('隔离只读联调样张；不代表正式七主题完整验收，未发送邮件。');
     const digest=renderDigest({batch,entries:selected,rankings,weeklyRankings,previousRankings:previous,warnings:errors,simulation:runner.name==='fixture',collectionWindows:windows,verification:options.verification,mailTemplate:options.mailTemplate});
-    const id=deliveryKey(recipient,batch),needsValidation=modelFailures>0||windows.some(window=>!window.completed)||(includeSection('daily')&&!rankings.length)||(!digest.simulation&&!digest.contentReady);
+    const blockingIssues=[...(modelFailures?['model_result_incomplete']:[]),...windows.filter(w=>!w.completed&&!(options.allowPartialDiscovery===true&&w.discoveryIncomplete===true&&w.processingCompleted===true)).map(w=>'topic_processing_incomplete:'+w.topicId),...(includeSection('daily')&&!rankings.length?['daily_ranking_missing']:[]),...(!digest.simulation&&!digest.contentReady?digest.contentIssues:[])];
+    const id=deliveryKey(recipient,batch),needsValidation=blockingIssues.length>0;
     mkdirSync(options.outputDir,{recursive:true});const path=resolve(options.outputDir,`${batch.date}-${batch.slot.replace(':','')}.html`);writeFileSync(path,digest.html);
     if(!needsValidation&&options.freezeDelivery!==false)store.prepareDelivery(id,'email',recipient,JSON.stringify(digest),selected.map(e=>e.item.key));
     checkpoint({stage:needsValidation?'needs_validation':'prepared',completed:[...completed],preview:path,rawSnapshot,errors,retryAt});
     store.finish(jobId,lease.token,needsValidation?'failed':'done');
-    return {jobId,state:needsValidation?'needs_validation':'prepared',preview:path,deliveryId:needsValidation||options.freezeDelivery===false?null:id,selected:new Set(selected.map(e=>e.item.key)).size,selectedLimit,ranked:rankings.length,attempted,totalBudget,filtered,collectionWindows:windows,retryAt,errors,simulation:digest.simulation,...(options.freezeDelivery===false?{digest,itemKeys:selected.map(e=>e.item.key)}:{})};
+    return {jobId,state:needsValidation?'needs_validation':'prepared',preview:path,deliveryId:needsValidation||options.freezeDelivery===false?null:id,selected:new Set(selected.map(e=>e.item.key)).size,selectedLimit,ranked:rankings.length,attempted,totalBudget,counts:{attempted,cached:cachedReads,acquired:attempted-cachedReads,assessed:entries.length,newAssessments,reusedAssessments},filtered,collectionWindows:windows,retryAt,blockingIssues,warnings:errors,errors,simulation:digest.simulation,...(options.freezeDelivery===false?{digest,itemKeys:selected.map(e=>e.item.key)}:{})};
   }catch(e){try{store.finish(jobId,lease.token,(e as RadarError).code==='CANCELLED'?'cancelled':'failed');}catch{}throw e;}
 }
