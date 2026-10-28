@@ -1,3 +1,4 @@
+import {interactionMetrics} from './interaction-metrics.ts';
 import { request, stripHtml } from './http.ts';
 import { Buffer } from 'node:buffer';
 import type { Fetcher } from './http.ts';
@@ -60,7 +61,7 @@ export class GitHubSource {
     const repo=stableId('github',repoInput),base=`https://api.github.com/repos/${repo}`,collectedAt=now(),warnings:string[]=[];
     const meta=await this.json(base,{headers:this.headers()});
     if(meta.private===true||meta.visibility==='private')throw new RadarError('PUBLIC_ONLY','主题雷达当前只读取公开仓库');
-    const item:Item={key:`github:${repo}`,platform:'github',externalId:repo,title:meta.full_name||repo,url:`https://github.com/${repo}`,authorId:String(meta.owner?.id||''),author:meta.owner?.login||repo.split('/')[0],publishedAt:meta.created_at||null,discoveredAt:collectedAt,version:'default-branch',metadata:{stars:meta.stargazers_count??null,license:meta.license?.spdx_id||null,defaultBranch:meta.default_branch,archived:!!meta.archived,pushedAt:meta.pushed_at}};
+    const item:Item={key:`github:${repo}`,platform:'github',externalId:repo,title:meta.full_name||repo,url:`https://github.com/${repo}`,authorId:String(meta.owner?.id||''),author:meta.owner?.login||repo.split('/')[0],publishedAt:meta.created_at||null,discoveredAt:collectedAt,version:'default-branch',metadata:{interactions:interactionMetrics('github',{stars:meta.stargazers_count,forks:meta.forks_count,watchers:meta.watchers_count}),stars:meta.stargazers_count??null,license:meta.license?.spdx_id||null,defaultBranch:meta.default_branch,archived:!!meta.archived,pushedAt:meta.pushed_at}};
     const evidence:Evidence[]=[];
     const add=(kind:string,url:string,text:string)=>evidence.push({itemKey:item.key,kind,url,text,collectedAt,coverage:{material:kind,expected:1,acquired:1,processed:0,state:'unread',method:'GitHub REST API；仅取得，尚未声明模型阅读'}});
     add('repository-metadata',base,JSON.stringify({description:meta.description,topics:meta.topics,license:item.metadata.license,archived:meta.archived,default_branch:meta.default_branch,pushed_at:meta.pushed_at},null,2));

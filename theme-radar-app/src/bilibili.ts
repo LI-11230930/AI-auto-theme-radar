@@ -1,3 +1,4 @@
+import {interactionMetrics} from './interaction-metrics.ts';
 import {readFileSync} from 'node:fs';
 import {now,stableId,RadarError,requireText} from './model.ts';
 import type {Evidence,Item} from './model.ts';
@@ -100,7 +101,7 @@ export class BilibiliSource {
     const pages=Array.isArray(info.pages)&&info.pages.length?info.pages:[{page:1,cid:info.cid,duration:info.duration,part:info.title}];
     if(pages.length>10000||pages.some((p:any)=>!Number.isSafeInteger(p.page)||p.page<1||!Number.isSafeInteger(Number(p.cid))||Number(p.cid)<1)||new Set(pages.map((p:any)=>p.page)).size!==pages.length)throw new RadarError('INVALID_RESPONSE','视频分P清单无效');
     const chosen=requested||pages.slice(0,3).map((p:any)=>p.page);if(chosen.some(n=>!pages.some((p:any)=>p.page===n)))throw new RadarError('INVALID_PAGES','所选分P不在视频清单内');
-    const item:Item={key:'bilibili:'+bvid,platform:'bilibili',externalId:bvid,title:info.title,url:'https://www.bilibili.com/video/'+bvid,author:info.owner?.name||'',authorId:String(info.owner?.mid||''),publishedAt:info.pubdate?new Date(info.pubdate*1000).toISOString():null,discoveredAt:collectedAt,version:'video',metadata:{cid:info.cid,aid:info.aid,pageCount:pages.length,requestedPages:chosen,readOtherComments:false,audioRead:false,visionRead:false}};
+    const item:Item={key:'bilibili:'+bvid,platform:'bilibili',externalId:bvid,title:info.title,url:'https://www.bilibili.com/video/'+bvid,author:info.owner?.name||'',authorId:String(info.owner?.mid||''),publishedAt:info.pubdate?new Date(info.pubdate*1000).toISOString():null,discoveredAt:collectedAt,version:'video',metadata:{interactions:interactionMetrics('bilibili',info.stat),cid:info.cid,aid:info.aid,pageCount:pages.length,requestedPages:chosen,readOtherComments:false,audioRead:false,visionRead:false}};
     const evidence:Evidence[]=[{itemKey:item.key,kind:'description',url:item.url,text:typeof info.desc==='string'?info.desc:'',collectedAt,coverage:{material:'视频简介',expected:1,acquired:1,processed:0,state:'unread',method:'B站视频信息'}}],warnings:string[]=[],results:any[]=[];
     if(chosen.length<pages.length)warnings.push(`本轮选择${chosen.length}/${pages.length}个分P；其他分P未读取`);
     for(const page of chosen){const part=pages.find((p:any)=>p.page===page),url=item.url+'?p='+page,result:any={page,cid:String(part.cid),duration:Number.isFinite(part.duration)&&part.duration>0?part.duration:null,state:'unavailable',segments:0};

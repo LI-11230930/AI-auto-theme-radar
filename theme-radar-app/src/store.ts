@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { hash, now, normalizeText, repoReferences, RadarError, validateCoverage, validateTopic, requireText,readableEvidence } from './model.ts';
 import type { Assessment, Evidence, Item, Topic, Ranking } from './model.ts';
+import {metricDelta} from './interaction-metrics.ts';
 import {sourceTimestamp} from './selection.ts';
 import {batchAt} from './time.ts';
 import {isEmailAddress} from './email-address.ts';
@@ -80,13 +81,21 @@ export class Store {
       const ids=evidences.map(e=>{const bodyHash=hash(e.text);const id=hash(`${item.key}:${e.kind}:${bodyHash}`);this.db.prepare('INSERT OR IGNORE INTO evidence VALUES(?,?,?,?,?,?)').run(id,item.key,e.kind,bodyHash,e.text,JSON.stringify({...e,id,hash:bodyHash}));return id;});
       let change='unchanged';
       if(!old||old.body_hash!==fingerprint){const previous=old?JSON.parse(old.data):null;change=!old?'discovered':previous.version!==item.version?'version_changed':'content_changed';this.db.prepare('INSERT INTO events VALUES(?,?,?,?,?,?)').run(randomUUID(),item.key,change,old?.body_hash||null,fingerprint,now());}
+      const metrics=old?metricDelta(JSON.parse(old.data),storedItem):[];
+      if(metrics.length){const eventId=randomUUID();this.db.prepare('INSERT INTO events VALUES(?,?,?,?,?,?)').run(eventId,item.key,'metrics_changed',hash(JSON.stringify(metrics.map(m=>({field:m.field,value:m.before})))),hash(JSON.stringify(metrics.map(m=>({field:m.field,value:m.after})))),now());this.log('metrics_changed',{eventId,itemKey:item.key,changes:metrics});}
       const refs=new Set(repoReferences([item.url,...evidences.map(e=>e.text)].join('\n')));
       if(item.platform==='github')refs.add(item.externalId.toLowerCase());
       for(const repo of refs){const group='github:'+repo;this.db.prepare('INSERT OR IGNORE INTO groups VALUES(?,?)').run(group,'明确引用同一GitHub仓库；保留独立来源');this.db.prepare('INSERT OR IGNORE INTO group_members VALUES(?,?)').run(group,item.key);}
-      return {key:item.key,evidenceIds:ids,change,fingerprint};
+      return {key:item.key,evidenceIds:ids,change,fingerprint,metricsChanged:metrics.length>0};
     });
   }
   item(key:string){const row=this.db.prepare('SELECT data FROM items WHERE key=?').get(key) as any;return row?JSON.parse(row.data):null;}
+  itemChanges(key:string,limit=30){
+    if(!Number.isInteger(limit)||limit<1||limit>50)throw new RadarError('INVALID_LIMIT','变化记录上限须为1至50');
+    const rows=this.db.prepare('SELECT id,kind,old_hash,new_hash,created_at FROM events WHERE item_key=? ORDER BY rowid DESC LIMIT ?').all(key,limit+1) as any[];
+    const events=rows.slice(0,limit).map(row=>{if(row.kind!=='metrics_changed')return {...row,metricsOnly:false};const detail=this.db.prepare("SELECT data FROM logs WHERE event='metrics_changed' AND json_extract(data,'$.eventId')=? ORDER BY id DESC LIMIT 1").get(row.id) as any;return {...row,metricsOnly:true,changes:detail?JSON.parse(detail.data).changes:[],note:'仅是两次取得的互动计数差异，不代表正文新价值，也不触发再次推荐。'};});
+    return {events,limit,mayHaveMore:rows.length>limit,scope:'local_observations_only; historical unknown counts are not reconstructed'};
+  }
   fingerprint(key:string){return (this.db.prepare('SELECT body_hash FROM items WHERE key=?').get(key) as any)?.body_hash||null;}
   evidence(key:string):Evidence[]{return this.db.prepare('SELECT data FROM evidence WHERE item_key=? ORDER BY rowid').all(key).map((r:any)=>JSON.parse(r.data));}
   currentEvidence(key:string):Evidence[]{const meta=this.item(key)?.metadata,ids=meta?.currentEvidenceIds;const all=this.evidence(key),observations=meta?.browserObservationBase===this.fingerprint(key)&&Array.isArray(meta?.browserObservationIds)?meta.browserObservationIds:[];return Array.isArray(ids)?all.filter(e=>ids.includes(e.id)||observations.includes(e.id)):all;}

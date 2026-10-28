@@ -15,7 +15,7 @@ export function archivedAnalysis(store:Store,itemKey:string){
   requireText(itemKey,'条目ID',300);if(!store.item(itemKey))throw new RadarError('NOT_FOUND','档案条目不存在');
   const snapshot=store.readingSnapshot(itemKey),fingerprint=store.fingerprint(itemKey),currentIds=new Set(store.currentEvidence(itemKey).map(e=>e.id));
   const assessments=store.topics().flatMap(t=>store.assessments(t.id).filter(a=>a.itemKey===itemKey).map(a=>({...a,topicId:t.id,topicName:t.name,current:a.topicRevision===t.revision&&a.itemFingerprint===fingerprint&&(a.reading?a.reading.snapshot===snapshot:a.readEvidenceIds.every(id=>currentIds.has(id)))})));
-  return {itemKey,snapshot,assessments,currentDefinition:'current表示此判断的主题版本及材料仍有效，不是全局唯一或最后一条；不同主题可同时为true，同主题也可保留多个有效判断。请结合topicId、agent与createdAt识别。',scope:'本地已归档文本分析；不是平台事实核验、视听阅读或自动订阅',emailSent:false,otherCommentsRead:0};
+  return {itemKey,snapshot,assessments,changeHistory:store.itemChanges(itemKey),currentDefinition:'current表示此判断的主题版本及材料仍有效，不是全局唯一或最后一条；不同主题可同时为true，同主题也可保留多个有效判断。请结合topicId、agent与createdAt识别。',scope:'本地已归档文本分析；不是平台事实核验、视听阅读或自动订阅',emailSent:false,otherCommentsRead:0};
 }
 
 export async function analyzeArchived(options:{store:Store;runner:Runner;topicId:string;itemKey:string;signal?:AbortSignal;commitGuard?:()=>void}){
