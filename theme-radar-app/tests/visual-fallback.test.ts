@@ -5,3 +5,9 @@ test('无轨无语音时取得画面文本，并与采样时间清单分开；�
 test('已有字幕或关闭开关不下载画面；取消不发起媒体读取',async t=>{const x=setup(t);x.config.bilibili.visual.enabled=false;await withVisualFallback(x.result,x.config,x.source,undefined,x.deps);assert.deepEqual(x.counts(),{media:0,runs:0});x.config.bilibili.visual.enabled=true;const controller=new AbortController();controller.abort();await assert.rejects(withVisualFallback(x.result,x.config,x.source,controller.signal,x.deps),{code:'CANCELLED'});assert.equal(x.counts().media,0);});
 test('受限不换路径规避、正文不足保留待恢复状态',async t=>{const x=setup(t);x.deps.fetcher=async()=>new Response('',{status:403});const r=await withVisualFallback(x.result,x.config,x.source,undefined,x.deps);assert.equal(r.item.metadata.ocrPages[0].reason,'ACCESS_DENIED');assert.equal(x.counts().runs,0);});
 test('ASR可保留自动检测的英文语言字段，不强制按中文解码',()=>{const data={ok:true,text:'Create a model',segments:[{from:0,to:2,content:'Create a model'}],duration:5,model:'faster-whisper-base',language:'en',coverage:'complete',range:{from:0,to:5}};assert.equal(parseAsrOutput(data,5).language,'en');});
+test('多P画面回退需显式允许且仍仅P1，P2/P3请求不读取媒体',async t=>{
+ const x=setup(t);x.result.item.metadata.requestedPages=[1,2,3];
+ await withVisualFallback(x.result,x.config,x.source,undefined,x.deps);assert.deepEqual(x.counts(),{media:0,runs:0});
+ const result=await withVisualFallback(x.result,x.config,x.source,undefined,x.deps,true);assert.equal(result.evidence[0].kind,'ocr:p1');assert.deepEqual(x.counts(),{media:1,runs:1});
+ x.result.item.metadata.requestedPages=[2,3];await withVisualFallback(x.result,x.config,x.source,undefined,x.deps,true);assert.deepEqual(x.counts(),{media:1,runs:1});
+});

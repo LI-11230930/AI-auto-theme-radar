@@ -10,7 +10,7 @@ beta.6四宿主统一流程：先在网页保存自己的计划，再调用radar
 
 ## 兴趣阅读
 
-> 先调用radar_status，核对服务和主题，再调用radar_bilibili_interest_round(topicId="bilibili-interest-tools")。最多20候选、3条P1，由已配置后台模型筛选。返回取得/缓存/新判断/复用的计数，直接使用sample.absolutePreview，不拼接Agent网页端口。没有草稿时返回原因，不用标题补写推荐。仅在用户主动要求本轮发送且已有启用的手动政策时处理邮件。
+> 先调用radar_status，核对服务和主题，再调用radar_bilibili_interest_round(topicId="bilibili-interest-tools")。最多20候选、3条视频（按主题的videoReading选择P1或实际前三P），由已配置后台模型筛选。返回取得/缓存/新判断/复用的计数，直接使用sample.absolutePreview，不拼接Agent网页端口。没有草稿时返回原因，不用标题补写推荐。仅在用户主动要求本轮发送且已有启用的手动政策时处理邮件。
 
 ## 邮件交接
 

@@ -83,7 +83,7 @@
     if (!asrStatus) return;
     asrStatus.replaceChildren();
     addText(asrStatus, 'span', value && value.enabled === true
-      ? '语音转写已启用：仅在P1无可读字幕时尝试，限10分钟以内视频；机器转写可能误识别。'
+      ? '语音转写已启用：仅在P1无可读字幕时按配置尝试，最多处理前10分钟；P2/P3不进行语音回退，机器转写可能误识别。'
       : '语音转写尚未启用；当前优先读取字幕。');
     if (value && value.lastProbe && value.lastProbe.comparisonPreview === '/preview/asr-comparison') {
       const link = document.createElement('a'); link.href = '/preview/asr-comparison';
@@ -148,7 +148,7 @@
         const acquisition = item.acquisition;
         if (acquisition.selectionGate && acquisition.selectionGate.sufficient === false) addText(row, 'p', '视频正文信息量不足：有效文字 ' + number(acquisition.selectionGate.characters) + ' / 最低 ' + number(acquisition.selectionGate.minimumCharacters) + ' 字；未进入邮件精选。');
         const materials = Array.isArray(acquisition.videoText) ? acquisition.videoText.slice(0, 3) : [];
-        const materialText = materials.map(m => (m.kind === 'asr:p1' ? 'P1机器转写' : 'P1字幕') + ' ' + number(m.characters) + '字').join('、');
+        const materialText = materials.map(m => ('P'+(m.kind.match(/:p(\d+)$/)?.[1]||'1')+(m.kind.startsWith('asr:')?'机器转写':m.kind.startsWith('ocr:')?'采样文字':'字幕')) + ' ' + number(m.characters) + '字').join('、');
         addText(row, 'p', (acquisition.cached === true ? '复用归档材料：' : '本次取得：') +
           (materialText || '未取得可读视频正文') +
           (acquisition.agentRead === true ? '；当前判断引用了视频正文。' : '；本轮没有确认模型引用视频正文。'));

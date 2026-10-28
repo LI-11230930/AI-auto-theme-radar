@@ -4,7 +4,7 @@ import {parseAsrOutput,transcribeAudio} from './asr.ts';
 
 type ReadingResult={item:Item;evidence:Evidence[];warnings:string[]};
 type AudioLocator=(bvid:string,options:{expectedAuthorUid:string;expectedCid:string;signal?:AbortSignal})=>Promise<{bvid:string;cid:string;duration:number;audioUrl:string}>;
-type Options={enabled:boolean;clipLongVideos?:boolean;pythonCommand?:string|null;modelDir?:string|null;workDir:string;signal?:AbortSignal;audio:AudioLocator;transcribe?:typeof transcribeAudio};
+type Options={enabled:boolean;allowMultipartP1?:boolean;clipLongVideos?:boolean;pythonCommand?:string|null;modelDir?:string|null;workDir:string;signal?:AbortSignal;audio:AudioLocator;transcribe?:typeof transcribeAudio};
 const propagated=new Set(['CANCELLED','AUTHOR_MISMATCH','VIDEO_MISMATCH','SOURCE_CHANGED','INVALID_AUTHOR','INVALID_CID','INVALID_ID']);
 const recognized=new Set(['AUTH_REQUIRED','CREDENTIAL_INVALID','ACCESS_DENIED','RATE_LIMITED','UPSTREAM_ERROR','INVALID_RESPONSE','NO_AUDIO','ASR_BUDGET','ASR_DURATION_LIMIT','ASR_CONFIG_INVALID','ASR_MODEL_MISSING','ASR_UNAVAILABLE','ASR_FAILED','ASR_EMPTY','ASR_TIMEOUT','ASR_DOWNLOAD_TIMEOUT','ASR_DOWNLOAD_FAILED','ASR_AUDIO_LIMIT','ASR_AUDIO_URL_INVALID','INVALID_AUDIO_URL','ASR_REDIRECT_BLOCKED','ASR_DOWNLOAD_INVALID','ASR_INVALID_INPUT','ASR_INVALID_OUTPUT','ASR_OUTPUT_LIMIT','ASR_DURATION_MISMATCH']);
 const decimal=(value:unknown)=>typeof value==='string'&&/^\d{1,20}$/.test(value)&&BigInt(value)>0n?BigInt(value).toString():null;
@@ -15,7 +15,7 @@ export async function withAsrFallback(result:ReadingResult,options:Options):Prom
   checkpoint(options.signal);
   if(!options.enabled)return result;
   const {item}=result,requested=item.metadata.requestedPages;
-  if(item.platform!=='bilibili'||!Array.isArray(requested)||requested.length!==1||requested[0]!==1)return result;
+  if(item.platform!=='bilibili'||!Array.isArray(requested)||!requested.includes(1)||(requested.length!==1&&options.allowMultipartP1!==true))return result;
   if(result.evidence.some(e=>isVideoTextKind(e.kind,1)&&e.coverage.acquired>0&&!!e.text.trim()))return result;
   const pages=item.metadata.subtitlePages;
   if(!Array.isArray(pages))return result;

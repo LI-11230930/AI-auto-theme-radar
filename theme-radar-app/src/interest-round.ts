@@ -7,9 +7,10 @@ import {freezeBilibiliSample} from './bilibili-sample.ts';
 import {beijingDate} from './time.ts';
 import {videoBodyQuality} from './bilibili-body-quality.ts';
 import {preferenceBoost} from './topic-preferences.ts';
+import {videoReadingProfile,profileCacheReady,profileVideoEvidence} from './video-reading-profile.ts';
 
 export type InterestCandidate={bvid:string;title:string;authorId:string;author?:string;publishedAt?:string|null;source?:string};
-export type InterestSources={recommendations:(limit:number)=>Promise<{items:InterestCandidate[];[key:string]:unknown}>;search:(keyword:string,limit:number)=>Promise<InterestCandidate[]>;read:(bvid:string,options:{pages:number[];expectedAuthorUid:string;includeDanmaku:boolean})=>Promise<{item:Item;evidence:Evidence[];warnings:string[]}>};
+export type InterestSources={recommendations:(limit:number)=>Promise<{items:InterestCandidate[];[key:string]:unknown}>;search:(keyword:string,limit:number)=>Promise<InterestCandidate[]>;read:(bvid:string,options:{pages?:number[];multipartP1Fallback?:boolean;expectedAuthorUid:string;includeDanmaku:boolean})=>Promise<{item:Item;evidence:Evidence[];warnings:string[]}>};
 const ttl=600000;
 export function notifiedVideoKeys(store:Store){
  const keys=new Set<string>();
@@ -29,15 +30,15 @@ function ensureTopic(store:Store,id:string,revision?:number){const topic=store.t
 function claimRound(store:Store,topicId:string){const id='interest-round:'+topicId,token=randomUUID(),clock=Date.now();store.tx(()=>{const old=store.job(id) as any;if(old?.state==='running'&&old.expires_at>clock)throw new RadarError('ROUND_BUSY','同一兴趣主题已有宿主执行，请等待或取消');store.db.prepare('INSERT INTO jobs VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,owner=excluded.owner,token=excluded.token,expires_at=excluded.expires_at,data=excluded.data,updated_at=excluded.updated_at').run(id,'running','interest:'+process.pid,token,clock+ttl,'{}',now());});return{id,token};}
 export function lastInterestRun(dataDir:string){try{return JSON.parse(readFileSync(resolve(dataDir,'reports','interest-round-last.json'),'utf8'));}catch{return null;}}
 export function interestCounts(report:any){const rows=Array.isArray(report?.results)?report.results:[];return {attempted:rows.length,newSourceReads:rows.filter(r=>r.acquisition?.cached===false).length,cachedMaterials:rows.filter(r=>r.acquisition?.cached===true).length,assessed:rows.filter(r=>r.state==='assessed').length,newAssessments:rows.filter(r=>r.state==='assessed'&&r.reused!==true).length,reusedAssessments:rows.filter(r=>r.state==='assessed'&&r.reused===true).length,selected:rows.filter(r=>r.selected===true).length,insufficientBody:rows.filter(r=>r.state==='insufficient_body'||r.code==='INSUFFICIENT_VIDEO_BODY').length,unavailableBody:rows.filter(r=>r.state==='no_subtitle').length,failed:rows.filter(r=>r.state==='failed').length};}
-function readingAcquisition(store:Store,key:string,cached:boolean){
+function readingAcquisition(store:Store,key:string,cached:boolean,topic:Topic){
  const item=store.item(key),evidence=store.currentEvidence(key),parts=item?.metadata?.asrPages;
  const asr=Array.isArray(parts)?parts.filter(p=>p&&typeof p==='object'&&p.page===1).map(p=>({page:1,state:p.state,reason:p.reason,characters:p.characters,sourceDuration:p.sourceDuration,processedRange:p.processedRange})):[];
- return {cached,videoText:evidence.filter(e=>isVideoTextKind(e.kind,1)&&!!e.text.trim()).map(e=>({kind:e.kind,characters:e.text.length})),asr,visual:item?.metadata?.ocrPages||[],agentRead:false};
+ return {cached,readingProfile:videoReadingProfile(topic),requestedPages:item?.metadata?.requestedPages||[1],videoText:profileVideoEvidence(topic,item,evidence).filter(e=>!!e.text.trim()).map(e=>({kind:e.kind,characters:e.text.length})),asr,visual:item?.metadata?.ocrPages||[],agentRead:false};
 }
 export async function runInterestRound(args:{store:Store;dataDir:string;topicId:string;source:InterestSources;readLimit?:number;recoverUnread?:boolean;excludeKeys?:string[];analyze:(topicId:string,itemKey:string,signal?:AbortSignal,commitGuard?:()=>void)=>Promise<any>;signal?:AbortSignal}){
  const {store,source}=args,limit=args.readLimit??3;if(!Number.isSafeInteger(limit)||limit<1||limit>3)throw new RadarError('INVALID_BUDGET','一轮最多读取3条视频');
- const topic=ensureTopic(store,args.topicId),lease=claimRound(store,topic.id),id=randomUUID();
- const report:any={id,topicId:topic.id,topicRevision:topic.revision,startedAt:now(),discovered:0,prefiltered:0,results:[],sources:[],candidateBudget:20,readLimit:limit,commentsRead:0,emailSent:false};
+ const topic=ensureTopic(store,args.topicId),profile=videoReadingProfile(topic),lease=claimRound(store,topic.id),id=randomUUID();
+ const report:any={id,topicId:topic.id,topicRevision:topic.revision,startedAt:now(),discovered:0,prefiltered:0,results:[],sources:[],candidateBudget:20,readLimit:limit,readingProfile:profile,commentsRead:0,emailSent:false};
  const controller=new AbortController(),signal=controller.signal,abort=()=>controller.abort();let controlError:unknown=null;if(args.signal?.aborted)controller.abort();args.signal?.addEventListener('abort',abort,{once:true});
  const checkpoint=()=>{if(controlError)throw controlError;if(signal.aborted)throw new RadarError('CANCELLED','本轮已取消');ensureTopic(store,topic.id,topic.revision);store.checkpoint(lease.id,lease.token,{id,topicId:topic.id,stage:report.stage,progress:{...report}},ttl);};
  const heartbeat=setInterval(()=>{try{checkpoint();}catch(error){controlError=error;controller.abort();}},10000);
@@ -60,20 +61,20 @@ export async function runInterestRound(args:{store:Store;dataDir:string;topicId:
    if(args.recoverUnread&&report.results.filter(r=>r.state==='assessed').length>=limit)break;
    checkpoint();report.stage='reading';const key='bilibili:'+row.bvid,result:any={itemKey:key,title:row.title,url:'https://www.bilibili.com/video/'+row.bvid,authorUid:row.authorId,source:row.source,state:'reading'};report.results.push(result);checkpoint();
    try{
-    const current=store.item(key),subtitle=store.currentEvidence(key).some(e=>e.text.trim()&&isVideoTextKind(e.kind,1));
-    const cached=!!current&&current.authorId===row.authorId&&subtitle&&videoBodyQuality(store.currentEvidence(key),undefined,1).sufficient;
-    if(!cached){const read=await source.read(row.bvid,{pages:[1],expectedAuthorUid:row.authorId,includeDanmaku:true});checkpoint();if(read.item.authorId!==row.authorId)throw new RadarError('AUTHOR_MISMATCH','实际作者与候选不符');store.capture(read.item,read.evidence,checkpoint);result.warnings=read.warnings;}
-    checkpoint();result.acquisition=readingAcquisition(store,key,cached);
+    const current=store.item(key),archived=store.currentEvidence(key),body=profileVideoEvidence(topic,current,archived);
+    const cached=!!current&&current.authorId===row.authorId&&profileCacheReady(topic,current,archived)&&body.some(e=>e.text.trim())&&videoBodyQuality(body).sufficient;
+    if(!cached){const read=await source.read(row.bvid,{...(profile.mode==='extended'?{multipartP1Fallback:true}:{pages:[1]}),expectedAuthorUid:row.authorId,includeDanmaku:true});checkpoint();if(read.item.authorId!==row.authorId)throw new RadarError('AUTHOR_MISMATCH','实际作者与候选不符');store.capture(read.item,read.evidence,checkpoint);result.warnings=read.warnings;}
+    checkpoint();result.acquisition=readingAcquisition(store,key,cached,topic);
     const blocked=[...result.acquisition.asr,...result.acquisition.visual].find(p=>['AUTH_REQUIRED','CREDENTIAL_INVALID','ACCESS_DENIED','RATE_LIMITED'].includes(p.reason));
     if(blocked){result.state='no_subtitle';result.code=blocked.reason;report.stoppedReason=blocked.reason;break;}
-    if(!store.currentEvidence(key).some(e=>e.text.trim()&&isVideoTextKind(e.kind,1))){result.state='no_subtitle';result.recovery='pending';pending(row,result.acquisition.asr[0]?.reason||'NO_READABLE_BODY');continue;}
-    result.acquisition.selectionGate=videoBodyQuality(store.currentEvidence(key),undefined,1);
+    if(!profileVideoEvidence(topic,store.item(key),store.currentEvidence(key)).some(e=>e.text.trim())){result.state='no_subtitle';result.recovery='pending';pending(row,result.acquisition.asr[0]?.reason||'NO_READABLE_BODY');continue;}
+    result.acquisition.selectionGate=videoBodyQuality(profileVideoEvidence(topic,store.item(key),store.currentEvidence(key)));
     if(!result.acquisition.selectionGate.sufficient){result.state='insufficient_body';result.code='INSUFFICIENT_VIDEO_BODY';result.selected=false;pending(row,result.code);continue;}
     report.stage='analyzing';checkpoint();const analysis=await args.analyze(topic.id,key,signal,checkpoint);checkpoint();const assessment=analysis.assessment;if(!assessment||assessment.simulation===true)throw new RadarError('INVALID_AGENT_OUTPUT','本轮需要真实正文判断');
     result.state='assessed';result.title=store.item(key).title;result.selected=assessment.selected===true;result.summaryZh=assessment.summaryZh;result.reused=analysis.reused===true;
     if(args.recoverUnread)store.db.prepare("UPDATE jobs SET state='done',updated_at=? WHERE id=?").run(now(),'video-recovery:'+hash(topic.id+':'+row.bvid));
-    const ids=new Set(assessment.readEvidenceIds||[]);result.acquisition.agentRead=store.currentEvidence(key).some(e=>ids.has(e.id)&&isVideoTextKind(e.kind,1));
-    result.acquisition.selectionGate=videoBodyQuality(store.currentEvidence(key),assessment,1);
+    const ids=new Set(assessment.readEvidenceIds||[]);result.acquisition.agentRead=profileVideoEvidence(topic,store.item(key),store.currentEvidence(key)).some(e=>ids.has(e.id));
+    result.acquisition.selectionGate=videoBodyQuality(profileVideoEvidence(topic,store.item(key),store.currentEvidence(key)),assessment);
     if(result.selected&&!result.acquisition.selectionGate.sufficient){result.agentSelected=true;result.selected=false;result.code='INSUFFICIENT_VIDEO_BODY';}
    }catch(error){const safe=publicError(error);result.state='failed';result.code=safe.code;if(['TOPIC_CHANGED','TOPIC_REQUIRED','CANCELLED','LEASE_LOST'].includes(safe.code))throw error;if(['AUTH_REQUIRED','ACCESS_DENIED','RATE_LIMITED','RUNNER_TIMEOUT','PROVIDER_CHANNEL_REJECTED','MODEL_QUOTA_EXCEEDED','AGENT_FAILED'].includes(safe.code)){report.stoppedReason=safe.code;break;}}
   }

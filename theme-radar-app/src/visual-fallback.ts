@@ -6,8 +6,9 @@ import {runProcess} from './runner.ts';
 import {RadarError,isVideoTextKind,now} from './model.ts';
 import type {BilibiliSource} from './bilibili.ts';
 
-export async function withVisualFallback(result:any,config:any,source:BilibiliSource,signal?:AbortSignal,dependencies:{fetcher?:typeof fetch;run?:typeof runProcess}={}){
- if(!config.bilibili?.visual?.enabled||result.evidence.some((e:any)=>isVideoTextKind(e.kind,1)&&e.text.trim())||JSON.stringify(result.item.metadata.requestedPages)!=='[1]')return result;
+export async function withVisualFallback(result:any,config:any,source:BilibiliSource,signal?:AbortSignal,dependencies:{fetcher?:typeof fetch;run?:typeof runProcess}={},allowMultipartP1=false){
+ const requested=result.item.metadata.requestedPages;
+ if(!config.bilibili?.visual?.enabled||result.evidence.some((e:any)=>isVideoTextKind(e.kind,1)&&e.text.trim())||!Array.isArray(requested)||!requested.includes(1)||(requested.length!==1&&!allowMultipartP1))return result;
  const part=result.item.metadata.subtitlePages?.find((p:any)=>p.page===1);
  if(!part||part.reason!=='no_track_exposed'||!part.duration||part.duration>600)return result;
  const asr=result.item.metadata.asrPages?.find((p:any)=>p.page===1);

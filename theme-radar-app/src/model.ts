@@ -4,7 +4,7 @@ export type Platform = 'bilibili' | 'xiaohongshu' | 'github';
 export type Coverage = { material: string; expected: number | null; acquired: number; processed: number; state: 'unread'|'partial'|'complete'|'unavailable'; method: string; note?: string; claimedByAgent?: boolean };
 export type Evidence = { id?: string; itemKey: string; kind: string; url: string; text: string; collectedAt: string; coverage: Coverage; hash?: string };
 export type Item = { platform: Platform; externalId: string; key: string; url: string; title: string; authorId: string; author: string; publishedAt: string | null; discoveredAt: string; version: string; metadata: Record<string, unknown> };
-export type ReadingTrace={snapshot:string;startedAt:string;completedAt:string;materials:{id:string;kind:string;providedCharacters:number;totalCharacters:number;truncated:boolean;cited:boolean}[];scope:'archived_text_only'};
+export type ReadingTrace={snapshot:string;startedAt:string;completedAt:string;materials:{id:string;kind:string;providedCharacters:number;totalCharacters:number;truncated:boolean;cited:boolean;providedSegments?:{from:number;to:number}[]}[];scope:'archived_text_only'};
 export type FlowSketch={steps:string[];basis:'overview'|'documented';evidenceIds:string[]};
 export type Assessment = { itemKey: string; selected: boolean; reason: string; summaryZh?: string; flow?: FlowSketch; readEvidenceIds: string[]; limitations: string[]; agent: string; model?: string; simulation?: boolean; reading?:ReadingTrace };
 export function isVideoTextKind(kind:string,page?:number){if(kind==='subtitle')return page===undefined||page===1;const match=/^(?:subtitle:p|browser-subtitle:p|asr:p|ocr:p)([1-9]\d*)$/.exec(kind);return !!match&&(page===undefined||Number(match[1])===page);}
@@ -12,7 +12,7 @@ export function readableEvidence(e:Evidence){return e.coverage.acquired>0&&!!e.t
 export type RankingPeriod = 'daily' | 'weekly';
 export type Ranking = { repo: string; url: string; rank: number; stars: number | null; starsToday: number | null; description: string; descriptionSource?: string; descriptionMissing?: boolean; summaryZh?: string; flow?: FlowSketch; period?: RankingPeriod; periodStars?: number | null; language: string | null; observedAt: string; source: string };
 export type DevelopmentGoal = {objective:string;implementationFirst:boolean};
-export type Topic = { id: string; name: string; description: string; keywords: string[]; exclude: string[]; preferred?:string[]; goal?:DevelopmentGoal; platforms: Platform[]; repositories?: string[]; bilibiliAuthors?:string[]; bilibiliDiscovery?:'keywords'|'authors'|'interests'; enabled: boolean };
+export type Topic = { id: string; name: string; description: string; keywords: string[]; exclude: string[]; preferred?:string[]; goal?:DevelopmentGoal; videoReading?:'standard'|'extended'; platforms: Platform[]; repositories?: string[]; bilibiliAuthors?:string[]; bilibiliDiscovery?:'keywords'|'authors'|'interests'; enabled: boolean };
 export type Batch = { date: string; slot: string; key: string; dueAt: string; startAt: string; endAt: string; timezone: 'Asia/Shanghai' };
 
 export class RadarError extends Error {
@@ -79,6 +79,7 @@ export function repoReferences(text: string): string[] {
   return [...refs];
 }
 export function validateTopic(topic: Topic) {
+  if(topic.videoReading!==undefined&&!['standard','extended'].includes(topic.videoReading))throw new RadarError('INVALID_TOPIC','视频阅读深度需要standard或extended');
   requireText(topic.id,'topic id',120); requireText(topic.name,'topic name',200); requireText(topic.description,'topic description',4000);
   if(!Array.isArray(topic.keywords)||!topic.keywords.length||topic.keywords.some(x=>typeof x!=='string'||!x.trim()||x.length>120)||!Array.isArray(topic.exclude)||topic.exclude.some(x=>typeof x!=='string'||x.length>200)||!Array.isArray(topic.platforms)||!topic.platforms.length||topic.platforms.some(x=>!['github','bilibili','xiaohongshu'].includes(x))||typeof topic.enabled!=='boolean')throw new RadarError('INVALID_TOPIC','主题关键词、排除条件和平台配置无效');
   if(topic.preferred!==undefined&&(!Array.isArray(topic.preferred)||topic.preferred.length>20||topic.preferred.some(x=>typeof x!=='string'||!x.trim()||x.length>200)||new Set(topic.preferred.map(x=>normalizeText(x).toLowerCase())).size!==topic.preferred.length))throw new RadarError('INVALID_TOPIC','优先偏好最多20个不重复的非空短语，每项最多200字符');
