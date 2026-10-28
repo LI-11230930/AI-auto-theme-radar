@@ -3,7 +3,12 @@ import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';import {tmpdir} from 'n
 import {initializeGithubCredential,githubCredentialStatus,requireGithubCredential} from '../src/github-credential.ts';
 import {GitHubSource} from '../src/github.ts';
 import {spawnSync} from 'node:child_process';
+import {RadarError} from '../src/model.ts';
 const fakeToken='github_pat_'+'synthetic_test_only_1234567890';
+test('Windows组件超时与解密失败分开，不要求重新输入或降级匿名',t=>{
+ const x=fixture(t),state=initializeGithubCredential(x.config,{env:x.env,clock:x.clock,decrypt:()=>{throw new RadarError('GITHUB_CREDENTIAL_DECRYPT_TIMEOUT','synthetic private detail');}});
+ assert.equal(state.code,'GITHUB_CREDENTIAL_DECRYPT_TIMEOUT');assert.match(state.note,/不需要重复输入/);assert.doesNotMatch(JSON.stringify(state),/synthetic private detail/);assert.equal(x.env.GITHUB_TOKEN,undefined);assert.throws(()=>requireGithubCredential(),{code:'GITHUB_CREDENTIAL_DECRYPT_TIMEOUT'});
+});
 function fixture(t:any){const dir=mkdtempSync(join(tmpdir(),'radar-credential-')),file=join(dir,'github.json'),clock=Date.parse('2026-10-28T04:00:00Z'),env:any={};t.after(()=>{initializeGithubCredential({}, {env:{}});rmSync(dir,{recursive:true,force:true});});const saved={version:1,createdAt:'2026-10-27T08:00:00Z',expiresAt:'2026-11-03T08:00:00Z',encryptedToken:'synthetic-encrypted-payload'};writeFileSync(file,JSON.stringify(saved));return {file,clock,env,saved,config:{github:{credentialFile:file}}};}
 test('空安装允许匿名配置，不调用解密；环境变量不被覆盖',t=>{
  const x=fixture(t);let calls=0;assert.equal(initializeGithubCredential({}, {env:x.env,clock:x.clock,decrypt:()=>{calls++;return fakeToken;}}).state,'anonymous');
@@ -35,7 +40,7 @@ test('切换配置不把本进程解密的凭据带到另一个配置中',t=>{
 test('Windows真实加解密不受宿主PowerShell7模块路径影响',{skip:process.platform!=='win32'},t=>{
  const x=fixture(t),env={...process.env};for(const key of Object.keys(env))if(key.toLowerCase()==='psmodulepath')delete env[key];
  const executable=join(process.env.SystemRoot||'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
- const encrypted=spawnSync(executable,['-NoLogo','-NoProfile','-NonInteractive','-Command',"$s=ConvertTo-SecureString -String ([Console]::In.ReadToEnd()) -AsPlainText -Force;try{[Console]::Out.Write((ConvertFrom-SecureString -SecureString $s))}finally{$s.Dispose()}"],{env,input:fakeToken,encoding:'utf8',windowsHide:true,timeout:8000});assert.equal(encrypted.status,0);
+ const encrypted=spawnSync(executable,['-NoLogo','-NoProfile','-NonInteractive','-Command',"$s=ConvertTo-SecureString -String ([Console]::In.ReadToEnd()) -AsPlainText -Force;try{[Console]::Out.Write((ConvertFrom-SecureString -SecureString $s))}finally{$s.Dispose()}"],{env,input:fakeToken,encoding:'utf8',windowsHide:true,timeout:30000});assert.equal(encrypted.status,0,encrypted.error?.code||'Windows encryption process failed');
  writeFileSync(x.file,JSON.stringify({...x.saved,encryptedToken:encrypted.stdout.trim()}));const previous=process.env.PSModulePath;process.env.PSModulePath=join(tmpdir(),'synthetic-powershell7-only');
  try{const state=initializeGithubCredential(x.config,{env:x.env,clock:x.clock});assert.equal(state.state,'configured');assert.equal(x.env.GITHUB_TOKEN,fakeToken);}finally{if(previous===undefined)delete process.env.PSModulePath;else process.env.PSModulePath=previous;}
 });

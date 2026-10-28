@@ -6,6 +6,7 @@ import type {Topic,Item,Evidence} from './model.ts';import type {Store} from './
 import {freezeBilibiliSample} from './bilibili-sample.ts';
 import {beijingDate} from './time.ts';
 import {videoBodyQuality} from './bilibili-body-quality.ts';
+import {preferenceBoost} from './topic-preferences.ts';
 
 export type InterestCandidate={bvid:string;title:string;authorId:string;author?:string;publishedAt?:string|null;source?:string};
 export type InterestSources={recommendations:(limit:number)=>Promise<{items:InterestCandidate[];[key:string]:unknown}>;search:(keyword:string,limit:number)=>Promise<InterestCandidate[]>;read:(bvid:string,options:{pages:number[];expectedAuthorUid:string;includeDanmaku:boolean})=>Promise<{item:Item;evidence:Evidence[];warnings:string[]}>};
@@ -21,7 +22,8 @@ export function notifiedVideoKeys(store:Store){
 export function interestScore(candidate:InterestCandidate,topic:Topic){
  const text=normalizeText(candidate.title).toLowerCase();
  if(topic.exclude.some(word=>word.trim()&&text.includes(normalizeText(word).toLowerCase())))return -1;
- return topic.keywords.filter(word=>{const w=normalizeText(word).toLowerCase();if(!w)return false;if(/^[a-z0-9]+$/.test(w))return new RegExp('(^|[^a-z0-9])'+w+'($|[^a-z0-9])','i').test(text);return text.includes(w);}).length;
+ const base=topic.keywords.filter(word=>{const w=normalizeText(word).toLowerCase();if(!w)return false;if(/^[a-z0-9]+$/.test(w))return new RegExp('(^|[^a-z0-9])'+w+'($|[^a-z0-9])','i').test(text);return text.includes(w);}).length;
+ return base?base+Math.min(preferenceBoost(topic,text),2):0;
 }
 function ensureTopic(store:Store,id:string,revision?:number){const topic=store.topics().find(t=>t.id===id&&t.enabled&&t.bilibiliDiscovery==='interests'&&t.platforms.includes('bilibili')&&!t.bilibiliAuthors?.length);if(!topic)throw new RadarError('TOPIC_REQUIRED','请选择不限作者的B站兴趣主题');if(revision!==undefined&&topic.revision!==revision)throw new RadarError('TOPIC_CHANGED','兴趣主题已变化，已停止本轮');return topic;}
 function claimRound(store:Store,topicId:string){const id='interest-round:'+topicId,token=randomUUID(),clock=Date.now();store.tx(()=>{const old=store.job(id) as any;if(old?.state==='running'&&old.expires_at>clock)throw new RadarError('ROUND_BUSY','同一兴趣主题已有宿主执行，请等待或取消');store.db.prepare('INSERT INTO jobs VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,owner=excluded.owner,token=excluded.token,expires_at=excluded.expires_at,data=excluded.data,updated_at=excluded.updated_at').run(id,'running','interest:'+process.pid,token,clock+ttl,'{}',now());});return{id,token};}

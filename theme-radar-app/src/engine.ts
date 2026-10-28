@@ -11,6 +11,7 @@ import {isEmailAddress} from './email-address.ts';
 import {tracedAssessment} from './archive-reading.ts';
 import {materialPrompt} from './runner.ts';
 import {now} from './model.ts';
+import {preferenceBoost} from './topic-preferences.ts';
 import type { Assessment, Topic, Item, Evidence, Batch, Ranking } from './model.ts';
 export type Runner={name?:string;describeRankings?:(rows:Ranking[],signal?:AbortSignal)=>Promise<Ranking[]>;assess:(topic:Topic,item:Item,evidence:Evidence[],signal?:AbortSignal)=>Promise<Assessment>};
 
@@ -58,7 +59,7 @@ export async function runGithub(options:{store:Store;source:GitHubSource;runner:
         if(discovered.incomplete){window.discoveryIncomplete=true;errors.push(topic.name+'：搜索返回部分候选，已取得内容仍逐条校验；本主题不标记完整覆盖、不推进覆盖窗口');}}catch(e){topicFailed=true;errors.push(topic.name+'：主题搜索 '+(e as Error).message);if((e as RadarError).code==='RATE_LIMITED'){retryAt=String((e as RadarError).details.retryAt);break topicLoop;}}
       // Keep one new-project exploration slot; use the other bounded slots for
       // stronger public signals, without imposing a minimum-star gate.
-      const exploratory=[...candidates].sort((a,b)=>(Date.parse(b.createdAt)||0)-(Date.parse(a.createdAt)||0))[0],mature=[...candidates].sort((a,b)=>(b.stars||0)-(a.stars||0));
+      const exploratory=[...candidates].sort((a,b)=>(Date.parse(b.createdAt)||0)-(Date.parse(a.createdAt)||0))[0],mature=[...candidates].sort((a,b)=>preferenceBoost(topic,b.repo+' '+b.description)-preferenceBoost(topic,a.repo+' '+a.description)||(b.stars||0)-(a.stars||0));
       candidates=allocation>1&&exploratory?[...mature.slice(0,allocation-1),exploratory,...mature]:mature;
       const repositories=[...new Set([...(topic.repositories||[]),...candidates.map(c=>c.repo)])].slice(0,allocation);
       for(const repo of repositories){check();if(attempted>=totalBudget)break topicLoop;attempted++;checkpoint({stage:'reading',completed:[...completed],repo,topicId:topic.id});

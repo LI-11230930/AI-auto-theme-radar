@@ -11,7 +11,8 @@ export function isVideoTextKind(kind:string,page?:number){if(kind==='subtitle')r
 export function readableEvidence(e:Evidence){return e.coverage.acquired>0&&!!e.text.trim()&&!['image-manifest','video-reading-manifest'].includes(e.kind)&&!e.kind.startsWith('browser-subtitle-observation:')&&!e.kind.startsWith('subtitle-timeline:')&&!e.kind.startsWith('asr-timeline:')&&!e.kind.startsWith('ocr-timeline:');}
 export type RankingPeriod = 'daily' | 'weekly';
 export type Ranking = { repo: string; url: string; rank: number; stars: number | null; starsToday: number | null; description: string; descriptionSource?: string; descriptionMissing?: boolean; summaryZh?: string; flow?: FlowSketch; period?: RankingPeriod; periodStars?: number | null; language: string | null; observedAt: string; source: string };
-export type Topic = { id: string; name: string; description: string; keywords: string[]; exclude: string[]; platforms: Platform[]; repositories?: string[]; bilibiliAuthors?:string[]; bilibiliDiscovery?:'keywords'|'authors'|'interests'; enabled: boolean };
+export type DevelopmentGoal = {objective:string;implementationFirst:boolean};
+export type Topic = { id: string; name: string; description: string; keywords: string[]; exclude: string[]; preferred?:string[]; goal?:DevelopmentGoal; platforms: Platform[]; repositories?: string[]; bilibiliAuthors?:string[]; bilibiliDiscovery?:'keywords'|'authors'|'interests'; enabled: boolean };
 export type Batch = { date: string; slot: string; key: string; dueAt: string; startAt: string; endAt: string; timezone: 'Asia/Shanghai' };
 
 export class RadarError extends Error {
@@ -80,6 +81,8 @@ export function repoReferences(text: string): string[] {
 export function validateTopic(topic: Topic) {
   requireText(topic.id,'topic id',120); requireText(topic.name,'topic name',200); requireText(topic.description,'topic description',4000);
   if(!Array.isArray(topic.keywords)||!topic.keywords.length||topic.keywords.some(x=>typeof x!=='string'||!x.trim()||x.length>120)||!Array.isArray(topic.exclude)||topic.exclude.some(x=>typeof x!=='string'||x.length>200)||!Array.isArray(topic.platforms)||!topic.platforms.length||topic.platforms.some(x=>!['github','bilibili','xiaohongshu'].includes(x))||typeof topic.enabled!=='boolean')throw new RadarError('INVALID_TOPIC','主题关键词、排除条件和平台配置无效');
+  if(topic.preferred!==undefined&&(!Array.isArray(topic.preferred)||topic.preferred.length>20||topic.preferred.some(x=>typeof x!=='string'||!x.trim()||x.length>200)||new Set(topic.preferred.map(x=>normalizeText(x).toLowerCase())).size!==topic.preferred.length))throw new RadarError('INVALID_TOPIC','优先偏好最多20个不重复的非空短语，每项最多200字符');
+  if(topic.goal!==undefined&&(!topic.goal||typeof topic.goal!=='object'||Array.isArray(topic.goal)||Object.keys(topic.goal).some(k=>!['objective','implementationFirst'].includes(k))||typeof topic.goal.objective!=='string'||!topic.goal.objective.trim()||topic.goal.objective.length>2000||typeof topic.goal.implementationFirst!=='boolean'))throw new RadarError('INVALID_TOPIC','开发目标需要非空描述（最多2000字符）及实现优先开关');
   if(topic.bilibiliAuthors!==undefined&&(!Array.isArray(topic.bilibiliAuthors)||topic.bilibiliAuthors.length>5||topic.bilibiliAuthors.some(id=>typeof id!=='string'||!/^[1-9]\d{0,19}$/.test(id))||new Set(topic.bilibiliAuthors).size!==topic.bilibiliAuthors.length))throw new RadarError('INVALID_TOPIC','B站作者使用最多5个不重复的正整数UID字符串，不能使用昵称');
   if(topic.bilibiliDiscovery!==undefined&&!['keywords','authors','interests'].includes(topic.bilibiliDiscovery))throw new RadarError('INVALID_TOPIC','B站发现方式无效');
   if(topic.bilibiliDiscovery==='interests'&&(!topic.platforms.includes('bilibili')||topic.bilibiliAuthors?.length))throw new RadarError('INVALID_TOPIC','兴趣推荐模式需要B站平台，作者UID需留空；原作者订阅可独立保留');

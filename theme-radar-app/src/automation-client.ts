@@ -32,7 +32,8 @@ export async function startOperatorService(config:any){
  // The worker loads its own protected record, retaining expiry/update tracking.
  if(githubCredentialStatus(config).source==='protected_file')delete childEnv.GITHUB_TOKEN;
  const child=spawn(process.execPath,[resolve(APP_ROOT,'src/cli.ts'),'serve',String(port)],{cwd:APP_ROOT,env:childEnv,detached:true,stdio:'ignore',windowsHide:true});child.on('error',()=>{spawnError=true;});child.unref();
- const deadline=Date.now()+8000;
+ // Includes one bounded cold start of the Windows protected-credential helper.
+ const deadline=Date.now()+35000;
  do{await pause(100);status=await operatorStatus(config);if(status.ready)return {...status,started:status.processId===child.pid,reused:status.processId!==child.pid};if(status.code!=='OPERATOR_REQUIRED')throw new RadarError(status.code,status.note);}while(!spawnError&&Date.now()<deadline);
  throw new RadarError('OPERATOR_START_FAILED','本机服务未在限定时间内就绪；请核对端口和配置，不自动重试或关闭其他进程。');
 }

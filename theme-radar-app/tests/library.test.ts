@@ -38,8 +38,8 @@ test('反馈预览显示前后规则，订阅改变后即使传入新版本也�
     store.saveTopic({...topic,description:'用户后来修改'},1);assert.throws(()=>store.applyFeedback(f.id,2),/重新预览/);assert.deepEqual(store.topics()[0].exclude,topic.exclude);
   }finally{store.close();}
 });
-test('有用/重复只记录意见，重复排除词不制造无效版本，长度校验与撤销保留',()=>{
-  const store=setup();try{for(const kind of ['useful','duplicate']){const f=store.addFeedback(item.key,topic.id,kind,'意见');assert.equal(f.applicable,false);assert.throws(()=>store.applyFeedback(f.id,1),/没有待应用/);store.revertFeedback(f.id);}
+test('重复只记录意见，重复排除词不制造无效版本，长度校验与撤销保留',()=>{
+  const store=setup();try{const f=store.addFeedback(item.key,topic.id,'duplicate','意见');assert.equal(f.applicable,false);assert.throws(()=>store.applyFeedback(f.id,1),/没有待应用/);store.revertFeedback(f.id);
     const duplicate=store.addFeedback(item.key,topic.id,'irrelevant',topic.exclude[0]);assert.equal(duplicate.applicable,false);assert.throws(()=>store.applyFeedback(duplicate.id,1));
     assert.throws(()=>store.addFeedback(item.key,topic.id,'irrelevant','x'.repeat(201)));assert.equal(store.topics()[0].revision,1);
     const valid=store.addFeedback(item.key,topic.id,'irrelevant','教程');store.applyFeedback(valid.id,1);store.revertFeedback(valid.id);assert.equal(store.topics()[0].revision,3);assert.deepEqual(store.topics()[0].exclude,topic.exclude);

@@ -7,6 +7,7 @@ import type { Assessment, Evidence, Item, Topic, Ranking } from './model.ts';
 import {sourceTimestamp} from './selection.ts';
 import {batchAt} from './time.ts';
 import {isEmailAddress} from './email-address.ts';
+import {feedbackTopic} from './topic-preferences.ts';
 
 export type BrowserObservationGuard={topicId:string;topicRevision:number;authorUid:string;readingSnapshot:string;page:number;duration:number};
 
@@ -229,11 +230,11 @@ export class Store {
   addFeedback(itemKey:string,topicId:string,kind:string,rule:string){
     if(!['useful','irrelevant','duplicate','less_like_this'].includes(kind))throw new RadarError('INVALID_FEEDBACK','反馈类型无效');
     const row=this.db.prepare('SELECT revision,data FROM subscriptions WHERE id=?').get(topicId) as any;if(!this.item(itemKey)||!row)throw new RadarError('NOT_FOUND','反馈目标不存在');
-    const negative=['less_like_this','irrelevant'].includes(kind);rule=requireText(rule,'rule',negative?200:2000);
-    const topic=JSON.parse(row.data),next={...topic,exclude:negative?[...new Set([...topic.exclude,rule])]:[...topic.exclude]};validateTopic(next);
-    const applicable=negative&&!topic.exclude.includes(rule),id=randomUUID();
+    const negative=['less_like_this','irrelevant'].includes(kind);rule=requireText(rule,'rule',kind==='duplicate'?2000:200);
+    const topic=JSON.parse(row.data),next=feedbackTopic(topic,kind,rule);validateTopic(next);
+    const applicable=JSON.stringify(next)!==row.data,id=randomUUID(),ruleTarget=negative?'exclude':kind==='useful'?'preferred':'record';
     this.db.prepare('INSERT INTO feedback(id,item_key,topic_id,kind,rule,reverted,created_at,previous_topic,next_topic) VALUES(?,?,?,?,?,0,?,?,?)').run(id,itemKey,topicId,kind,rule,now(),row.data,JSON.stringify(next));
-    return {id,preview:rule,revision:row.revision,before:topic.exclude,after:next.exclude,applicable,applied:false,note:negative?'规则为字面排除词；应用前核对影响范围':'仅保存反馈记录，不自动修改订阅或合并内容'};
+    return {id,preview:rule,revision:row.revision,ruleTarget,before:negative?topic.exclude:topic.preferred||[],after:negative?next.exclude:next.preferred||[],applicable,applied:false,note:negative?'规则为字面排除词，作用于本主题各平台；应用前核对影响范围':kind==='useful'?'应用后作为本主题的优先偏好；仅调整候选阅读顺序和模型相关性，不扩大搜索、不保证入选，排除词优先':'仅保存重复线索，不自动合并、删除或过滤其他来源'};
   }
   feedback(){return this.db.prepare('SELECT * FROM feedback ORDER BY created_at DESC').all();}
   revertFeedback(id:string){return this.tx(()=>{const f=this.db.prepare('SELECT * FROM feedback WHERE id=?').get(id) as any;if(!f)throw new RadarError('NOT_FOUND','反馈不存在');if(f.reverted)return;if(f.applied_revision){const topic=this.db.prepare('SELECT revision,data FROM subscriptions WHERE id=?').get(f.topic_id) as any;if(topic.revision!==f.applied_revision||topic.data!==f.next_topic)throw new RadarError('REVISION_CONFLICT','订阅后来又修改过，请先比较规则再撤销，不能覆盖后续更改');this.db.prepare('UPDATE subscriptions SET revision=?,data=?,updated_at=? WHERE id=?').run(topic.revision+1,f.previous_topic,now(),f.topic_id);}this.db.prepare('UPDATE feedback SET reverted=1 WHERE id=?').run(id);this.log('feedback_reverted',{id});});}
@@ -241,8 +242,8 @@ export class Store {
     const f=this.db.prepare('SELECT * FROM feedback WHERE id=?').get(id) as any;if(!f||f.reverted)throw new RadarError('NOT_FOUND','反馈已撤销或不存在');if(f.applied_revision)throw new RadarError('ALREADY_APPLIED','反馈规则已经应用');
     const row=this.db.prepare('SELECT revision,data FROM subscriptions WHERE id=?').get(f.topic_id) as any;
     if(row.revision!==expectedRevision||(f.previous_topic&&f.previous_topic!==row.data))throw new RadarError('REVISION_CONFLICT','订阅已变化，请重新预览，不能应用旧预览');
-    const topic=JSON.parse(row.data);if(!['less_like_this','irrelevant'].includes(f.kind)||topic.exclude.includes(f.rule))throw new RadarError('NO_RULE_CHANGE','此反馈没有待应用的订阅规则变化');
-    topic.exclude=[...topic.exclude,f.rule];validateTopic(topic);const next=JSON.stringify(topic);
+    const topic=feedbackTopic(JSON.parse(row.data),f.kind,f.rule);validateTopic(topic);const next=JSON.stringify(topic);
+    if(next===row.data||next!==f.next_topic)throw new RadarError('NO_RULE_CHANGE','此反馈没有待应用的订阅规则变化；历史仅记录的意见需重新预览');
     this.db.prepare('UPDATE subscriptions SET revision=?,data=?,updated_at=? WHERE id=?').run(row.revision+1,next,now(),f.topic_id);
     this.db.prepare('UPDATE feedback SET applied_revision=?,previous_topic=?,next_topic=? WHERE id=?').run(row.revision+1,row.data,next,id);this.log('feedback_applied',{id,revision:row.revision+1});return topic;
   });}

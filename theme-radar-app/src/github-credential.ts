@@ -14,6 +14,7 @@ const messages:Record<string,string>={
  GITHUB_CREDENTIAL_UNAVAILABLE:'无法读取已配置的GitHub凭据文件；没有改用其他凭据或匿名访问。',
  GITHUB_CREDENTIAL_UNSUPPORTED:'当前系统无法解密Windows当前用户凭据；可改用本机GITHUB_TOKEN环境变量。',
  GITHUB_CREDENTIAL_DECRYPT_FAILED:'Windows当前用户无法解密该凭据；请核对使用者与本机保存记录。',
+ GITHUB_CREDENTIAL_DECRYPT_TIMEOUT:'Windows加密组件启动超过30秒，尚未确认凭据能否解密；请核对本机负载后重启服务，不需要重复输入令牌。',
  GITHUB_CREDENTIAL_RELOAD_REQUIRED:'保存的GitHub凭据已更新，当前进程仍使用旧值；请重启服务或重连MCP，无需重复输入。'
 };
 function record(file:string){
@@ -29,7 +30,8 @@ function decryptWindows(encrypted:string){
  const script=`$ErrorActionPreference='Stop';$b=[IntPtr]::Zero;$s=$null;try{$s=ConvertTo-SecureString -String ([Console]::In.ReadToEnd().Trim());$b=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($s);[Console]::Out.Write([Runtime.InteropServices.Marshal]::PtrToStringBSTR($b))}catch{exit 1}finally{if($b -ne [IntPtr]::Zero){[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($b)};if($s){$s.Dispose()}}`;
  const childEnv={...process.env};for(const key of Object.keys(childEnv))if(key.toLowerCase()==='psmodulepath')delete childEnv[key];
  const executable=resolve(process.env.SystemRoot||'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
- const result=spawnSync(executable,['-NoLogo','-NoProfile','-NonInteractive','-Command',script],{env:childEnv,input:encrypted,encoding:'utf8',timeout:8000,maxBuffer:16384,windowsHide:true});
+ const result=spawnSync(executable,['-NoLogo','-NoProfile','-NonInteractive','-Command',script],{env:childEnv,input:encrypted,encoding:'utf8',timeout:30000,maxBuffer:16384,windowsHide:true});
+ if((result.error as any)?.code==='ETIMEDOUT')throw new RadarError('GITHUB_CREDENTIAL_DECRYPT_TIMEOUT','Windows加密组件启动超时');
  if(result.status!==0||result.error)throw new RadarError('GITHUB_CREDENTIAL_DECRYPT_FAILED','解密失败');
  return result.stdout.trim();
 }
