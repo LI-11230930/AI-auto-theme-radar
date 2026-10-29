@@ -29,6 +29,7 @@ function batchForRun(p:AutomationPlan,run:any):Batch{const end=new Date(run.dueA
 export class AutomationRuntime{
  config:any;store:Store;active=new Map<string,AbortController>();runningData=new Map<string,any>();online=new Map<string,number>();blocked=new Map<string,any>();timer:any;closed=false;dependencies:any;
  constructor(config:any,store:Store,dependencies:any={}){this.config=config;this.store=store;this.dependencies=dependencies;}
+ private ensureOpen(){if(this.closed)throw new RadarError('CANCELLED','执行服务正在关闭，不再领取、创建或提交新任务');}
  start(){this.timer=setInterval(()=>{try{this.tick();}catch{}},10000);this.timer.unref?.();}
  async close(){this.closed=true;clearInterval(this.timer);for(const c of this.active.values())c.abort();while(this.active.size)await pause(10);}
  status(){return {plans:plans(this.store).map(p=>({...p,scheduleStatus:scheduleStatus(p),blockedReason:this.blocked.get(p.id)||null,availability:p.execution==='attached'?'requires_online_agent_session':p.agent==='WorkBuddy'?'unsupported_background':this.config.runners[p.agent]?.command?'cli_configured_unverified':'missing_cli'})),runs:runRows(this.store).map(({body,plan,...run})=>({...run,...(run.preview?{absolutePreview:absolutePreviewUrl(this.config,run.preview)}:{}),...(body?{contentHash:frozenContentHash(body),subject:body.subject}:{}),deliveryState:run.deliveryId?this.store.delivery(run.deliveryId)?.state:null,emailSent:run.deliveryId?this.store.delivery(run.deliveryId)?.state==='sent_confirmed':false})),onlineAgents:[...this.online].filter(([,at])=>Date.now()-at<30000).map(([agent])=>agent),timezone:'Asia/Shanghai',scheduler:'local_service_only; computer and service must stay running',automaticSendingDefault:false};}
@@ -53,6 +54,7 @@ export class AutomationRuntime{
  }
  guard(p:AutomationPlan,signal:AbortSignal){if(signal.aborted||this.closed)throw new RadarError('CANCELLED','运行已取消');const current=planById(this.store,p.id);if(!current||current.revision!==p.revision)throw new RadarError('PLAN_CHANGED','计划已变更，停止旧轮次');for(const id of p.topicIds){const topic=this.store.topics().find(t=>t.id===id&&t.enabled);if(!topic)throw new RadarError('TOPIC_CHANGED','主题已关闭或移除');}}
  async requestModel(p:AutomationPlan,runId:string,prompt:string,schema:object,signal?:AbortSignal){
+  this.ensureOpen();
   if(signal?.aborted)throw new RadarError('CANCELLED','任务已取消');
   const id='automation-model:'+randomUUID(),token=randomUUID(),expires=Date.now()+600000,data={runId,agent:p.agent,prompt,schema,status:'pending',result:null};
   const parent=this.runningData.get(runId),previousStage=parent?.stage;if(parent)parent.stage='awaiting_model';
@@ -63,12 +65,12 @@ export class AutomationRuntime{
  async next(agent:string,waitMs=0,sessionId='local-session'){
   if(!automationAgents.includes(agent)||!Number.isSafeInteger(waitMs)||waitMs<0||waitMs>20000)throw new RadarError('INVALID_INPUT','宿主或等待时间无效，等待最多20秒');
   const end=Date.now()+waitMs;
-  do{this.online.set(agent,Date.now());this.tick();const rows=this.store.db.prepare("SELECT t.id,t.token,t.data,t.expires_at FROM jobs t JOIN jobs r ON r.id=json_extract(t.data,'$.runId') WHERE t.id LIKE 'automation-model:%' AND t.state='running' AND t.owner=? AND t.expires_at>? AND json_extract(t.data,'$.status')='pending' AND coalesce(json_extract(t.data,'$.claimedSession'),'') IN ('',?) AND r.state='running' AND r.expires_at>? ORDER BY t.updated_at,t.rowid LIMIT 1").all(agent,Date.now(),sessionId,Date.now()) as any[];
+  do{this.ensureOpen();this.online.set(agent,Date.now());this.tick();const rows=this.store.db.prepare("SELECT t.id,t.token,t.data,t.expires_at FROM jobs t JOIN jobs r ON r.id=json_extract(t.data,'$.runId') WHERE t.id LIKE 'automation-model:%' AND t.state='running' AND t.owner=? AND t.expires_at>? AND json_extract(t.data,'$.status')='pending' AND coalesce(json_extract(t.data,'$.claimedSession'),'') IN ('',?) AND r.state='running' AND r.expires_at>? ORDER BY t.updated_at,t.rowid LIMIT 1").all(agent,Date.now(),sessionId,Date.now()) as any[];
    for(const row of rows){const task=this.store.tx(()=>{const latest=this.store.job(row.id) as any;if(!latest||latest.state!=='running'||latest.owner!==agent||latest.token!==row.token||latest.expires_at<=Date.now())return null;const d=JSON.parse(latest.data);if(d.status!=='pending'||d.claimedSession&&d.claimedSession!==sessionId)return null;const run=this.store.job(d.runId) as any;if(!run||run.state!=='running'||run.expires_at<=Date.now())return null;d.claimedSession=sessionId;this.store.db.prepare('UPDATE jobs SET data=? WHERE id=?').run(JSON.stringify(d),row.id);return {id:row.id,token:row.token,agent,runId:d.runId,prompt:d.prompt,schema:d.schema,...(JSON.parse(d.prompt).kind==='inspiration-card'?{kind:'inspiration-card'}:{}),...(d.validationError?{validationError:d.validationError,correctionsRemaining:3-d.validationFailures}:{}),expiresAt:new Date(row.expires_at).toISOString()};});if(task)return {task,instruction:'用当前宿主模型阅读prompt并按schema返回JSON，通过automation_submit提交；accepted=false且retryable=true时只纠正原任务，不创建新轮次；不得自行访问平台或发信；宿主名为自报，非身份认证'};}
    if(Date.now()>=end||this.closed)break;await pause(100);
   }while(true);return {task:null,instruction:'没有待处理模型任务；需要持续参与已启用计划时，在当前会话继续调用next；本服务不能主动唤醒已关闭的Agent应用'};
  }
- submit(input:{taskId:string;token:string;agent:string;result:any}){return this.store.tx(()=>{
+ submit(input:{taskId:string;token:string;agent:string;result:any}){this.ensureOpen();return this.store.tx(()=>{
   const row=this.store.job(input.taskId) as any;if(!row||!row.id.startsWith('automation-model:')||row.token!==input.token||row.owner!==input.agent||row.state!=='running'||row.expires_at<=Date.now())throw new RadarError('LEASE_LOST','模型任务、宿主或令牌已失效');
   const d=JSON.parse(row.data),run=this.store.job(d.runId) as any;if(!run||run.state!=='running'||run.expires_at<=Date.now())throw new RadarError('LEASE_LOST','父轮次已失效');
   const r=JSON.parse(run.data),p=planById(this.store,r.planId);if(!p||p.revision!==r.planRevision||this.active.get(d.runId)?.signal.aborted)throw new RadarError('PLAN_CHANGED','父计划已变化或取消');
@@ -111,7 +113,7 @@ export class AutomationRuntime{
   }catch(error){run.stage=signal.aborted?'cancelled':'failed';run.error=publicError(error);run.completedAt=now();try{store.checkpoint(lease.id,lease.token,run,600000);store.finish(lease.id,lease.token,signal.aborted?'cancelled':'failed');}catch{}}
   finally{clearInterval(heartbeat);}
  }
- reserveAttempt(p:AutomationPlan,run:any,claim:()=>void){return this.store.tx(()=>{
+ reserveAttempt(p:AutomationPlan,run:any,claim:()=>void){this.ensureOpen();return this.store.tx(()=>{
   const current=planById(this.store,p.id),once=oneOffApproval(this.store,run,p);if(!current||current.revision!==p.revision||!once&&(!current.enabled||!current.sendApproved||current.delivery==='draft'))throw new RadarError('MAIL_DISABLED','计划未启用或发送授权已变化');
   if(this.store.topics().some(t=>p.topicIds.includes(t.id)&&(!t.enabled||t.revision!==run.topicRevisions[t.id])))throw new RadarError('TOPIC_CHANGED','主题已变化，未领取旧草稿发送');
   for(const item of this.store.deliveryItems(run.deliveryId))if(item.fingerprint!==this.store.fingerprint(item.item_key))throw new RadarError('SOURCE_CHANGED','冻结邮件的材料已变化，未领取发送');
