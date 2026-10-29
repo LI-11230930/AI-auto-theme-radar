@@ -79,7 +79,7 @@ export function archivePreview(config:any,store:Store,batch:Batch=latestDue()){
       if(assessment.topicRevision!==topic.revision||assessment.itemFingerprint!==store.fingerprint(assessment.itemKey)||evaluated.has(assessment.itemKey))continue;
       evaluated.add(assessment.itemKey);const item=store.item(assessment.itemKey);
       if(!assessment.selected||seen.has(assessment.itemKey)||item?.platform!=='github'||!activityInWindow(item,window).eligible||store.alreadyRecommended(item.key))continue;
-      seen.add(item.key);entries.push({item,evidence:store.currentEvidence(item.key),assessment});
+      seen.add(item.key);entries.push({item,evidence:store.currentEvidence(item.key),assessment,topicId:topic.id});
     }
   }
   const sections=template?.github.sections||['projects','daily','weekly'],rankings=sections.includes('daily')?store.previousRanking('daily')?.rows||[]:[],weeklyRankings=sections.includes('weekly')?store.previousRanking('weekly')?.rows||[]:[],warnings=['宿主交互筛选的档案预览；仅本地已存结果，未发送邮件，不推进投递历史。','已按来源活动时间过滤；材料为采集时当前版本，档案和榜单可能不是最新快照。'];

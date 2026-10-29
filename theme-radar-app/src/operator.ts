@@ -51,7 +51,7 @@ export async function startOperator(port?:number,automationDependencies?:any){
     try{
       if(await browserBatchHttp(req,res,browserBatches))return;
       if(req.method==='GET'&&url.pathname==='/'){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(readFileSync(resolve(APP_ROOT,'operator.html')));return;}
-      const workbenchAssets:Record<string,[string,string]>={'/assets/workbench.css':['operator-workbench.css','text/css'],'/assets/workbench.js':['operator-workbench.js','application/javascript'],'/assets/workbench-core.js':['workbench-core.js','application/javascript']};
+      const workbenchAssets:Record<string,[string,string]>={'/assets/workbench.css':['operator-workbench.css','text/css'],'/assets/workbench.js':['operator-workbench.js','application/javascript'],'/assets/workbench-core.js':['workbench-core.js','application/javascript'],'/assets/feedback-link-core.js':['feedback-link-core.js','application/javascript']};
       if(req.method==='GET'&&workbenchAssets[url.pathname]){const [file,type]=workbenchAssets[url.pathname];res.writeHead(200,{'Content-Type':type+'; charset=utf-8'});res.end(readFileSync(resolve(APP_ROOT,file)));return;}
       if(req.method==='GET'&&url.pathname==='/help/install'){res.writeHead(200,{'Content-Type':'text/plain; charset=utf-8','Content-Security-Policy':"default-src 'none'; base-uri 'none'; form-action 'none'"});res.end(readFileSync(resolve(APP_ROOT,'INSTALL.md')));return;}
       if(req.method==='GET'&&url.pathname==='/assets/reading.js'){res.writeHead(200,{'Content-Type':'application/javascript; charset=utf-8'});res.end(readFileSync(resolve(APP_ROOT,'operator-reading.js')));return;}

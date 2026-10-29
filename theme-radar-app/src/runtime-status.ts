@@ -3,7 +3,7 @@ import {resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 
-export const serviceVersion='0.1.0-beta.27';
+export const serviceVersion='0.1.0-beta.28';
 export function createRuntimeStatus(sourceFolder=dirname(fileURLToPath(import.meta.url))){
   const fingerprint=()=>{try{const h=createHash('sha256');for(const name of readdirSync(sourceFolder).filter(n=>n.endsWith('.ts')).sort()){h.update(JSON.stringify(name));h.update(readFileSync(resolve(sourceFolder,name)));}return h.digest('hex');}catch{return null;}};
   const sourceFingerprintAtStart=fingerprint(),startedAt=new Date(Date.now()-process.uptime()*1000).toISOString();

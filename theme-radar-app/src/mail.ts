@@ -11,7 +11,7 @@ const esc=(value:unknown)=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;'
 const link=(url:string)=>{try{const u=new URL(url);return ['https:','http:'].includes(u.protocol)?esc(u.href):'#';}catch{return '#';}};
 export const MAIL_FORMAT='github-brief-zh-v3';
 export const RANKING_DESCRIPTION_MISSING='未取得项目简介，暂无法概括用途。';
-export type DigestEntry={item:Item;assessment:Assessment;evidence:Evidence[]};
+export type DigestEntry={item:Item;assessment:Assessment;evidence:Evidence[];topicId?:string};
 export function briefZh(value:unknown):string|null{
   if(typeof value!=='string')return null;
   const text=value.trim();
@@ -31,7 +31,7 @@ export function renderDigest(options:{batch:Batch;entries:DigestEntry[];rankings
   options.entries.filter(e=>e.assessment.selected).forEach(e=>{if(!unique.has(e.item.key))unique.set(e.item.key,e);});
   const entries=(options.mailTemplate&&!options.mailTemplate.github.sections.includes('projects')?[]:[...unique.values()]).slice(0,5),daily=options.rankings.slice(0,10),weekly=(options.weeklyRankings||[]).slice(0,10),simulated=!!options.simulation||entries.some(e=>e.assessment.simulation);
   const issues:string[]=[];
-  const entryCopy=entries.map(e=>{const summary=briefZh(e.assessment.summaryZh),rawFlow=flowSketch(e.assessment.flow),flow=rawFlow&&!(rawFlow.basis==='documented'&&rawFlow.evidenceIds.some(id=>!e.assessment.readEvidenceIds.includes(id)||!e.evidence.some(m=>m.id===id)))?rawFlow:null;if(!summary)issues.push('project_summary:'+e.item.key);if(!flow)issues.push('project_flow:'+e.item.key);return {title:e.item.title,url:e.item.url,summary:summary||'中文简介待补充。',flow,starLine:''};});
+  const entryCopy=entries.map(e=>{const summary=briefZh(e.assessment.summaryZh),rawFlow=flowSketch(e.assessment.flow),flow=rawFlow&&!(rawFlow.basis==='documented'&&rawFlow.evidenceIds.some(id=>!e.assessment.readEvidenceIds.includes(id)||!e.evidence.some(m=>m.id===id)))?rawFlow:null;if(!summary)issues.push('project_summary:'+e.item.key);if(!flow)issues.push('project_flow:'+e.item.key);return {itemKey:e.item.key,topicId:e.topicId,title:e.item.title,url:e.item.url,summary:summary||'中文简介待补充。',flow,starLine:''};});
   const rankCopy=(rows:Ranking[],period:'daily'|'weekly')=>{
     if(options.mailTemplate&&!options.mailTemplate.github.sections.includes(period))return [];
     if(rows.length!==10||new Set(rows.map(r=>r.repo)).size!==10)issues.push(period+'_top10_required');
