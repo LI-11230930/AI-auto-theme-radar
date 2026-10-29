@@ -67,17 +67,25 @@ export async function runProcess(command:string,args:string[],input:string,optio
   if(/\.(?:cmd|bat)$/i.test(command))throw new RadarError('EXECUTABLE_REQUIRED','请配置实际 exe 或 node+脚本入口，避免 shell 转义提示词');
   if(options.signal?.aborted)throw new RadarError('CANCELLED','运行已取消');
   return new Promise((resolveResult,reject)=>{
-    const child=spawn(command,args,{cwd:options.cwd,env:{...process.env,...options.env},shell:false,windowsHide:true,detached:process.platform!=='win32',stdio:['pipe','pipe','pipe']});let stdout='',stderr='',bytes=0,settled=false,failure:RadarError|null=null;
+    const child=spawn(command,args,{cwd:options.cwd,env:{...process.env,...options.env},shell:false,windowsHide:true,detached:process.platform!=='win32',stdio:['pipe','pipe','pipe']});let stdout='',stderr='',bytes=0,settled=false,failure:RadarError|null=null,escalation:ReturnType<typeof setTimeout>|undefined;
     const stop=(error:RadarError)=>{
       if(failure)return;failure=error;
-      if(!child.pid||child.exitCode!==null||child.signalCode!==null)return;
-      if(process.platform==='win32')execFile(join(process.env.SystemRoot||'C:\\Windows','System32/taskkill.exe'),['/PID',String(child.pid),'/T','/F'],{windowsHide:true,timeout:5000},e=>{if(e&&child.exitCode===null)child.kill();});
-      else{try{process.kill(-child.pid,'SIGTERM');}catch{child.kill();}}
+      if(!child.pid)return;
+      if(process.platform==='win32'){
+        if(child.exitCode===null&&child.signalCode===null)execFile(join(process.env.SystemRoot||'C:\\Windows','System32/taskkill.exe'),['/PID',String(child.pid),'/T','/F'],{windowsHide:true,timeout:5000},e=>{if(e&&!settled&&child.exitCode===null)child.kill();});
+      }else{
+        // The detached process group may outlive its leader and keep our pipes
+        // open. Escalate the owned group, even after the leader has exited.
+        const killGroup=(signal:NodeJS.Signals)=>{try{process.kill(-child.pid!,signal);}catch{if(child.exitCode===null&&child.signalCode===null)child.kill(signal);}};
+        killGroup('SIGTERM');
+        escalation=setTimeout(()=>killGroup('SIGKILL'),1000);
+        escalation.unref?.();
+      }
     };
     const abort=()=>stop(new RadarError('CANCELLED','运行已取消'));
     options.signal?.addEventListener('abort',abort,{once:true});
     const timer=setTimeout(()=>stop(new RadarError('RUNNER_TIMEOUT','Agent 运行超出时间预算')),options.timeoutMs||60000);
-    const cleanup=()=>{clearTimeout(timer);options.signal?.removeEventListener('abort',abort);};
+    const cleanup=()=>{clearTimeout(timer);clearTimeout(escalation);if(failure&&process.platform!=='win32'&&child.pid)try{process.kill(-child.pid,'SIGKILL');}catch{}options.signal?.removeEventListener('abort',abort);};
     child.stdout.setEncoding('utf8');child.stderr.setEncoding('utf8');
     child.stdout.on('data',(chunk:string)=>{bytes+=Buffer.byteLength(chunk);if(bytes>(options.maxBytes||2000000))stop(new RadarError('RUNNER_OUTPUT_LIMIT','Agent 输出超出预算'));else stdout+=chunk;});
     child.stderr.on('data',(chunk:string)=>{bytes+=Buffer.byteLength(chunk);if(bytes>(options.maxBytes||2000000))stop(new RadarError('RUNNER_OUTPUT_LIMIT','Agent 输出超出预算'));else stderr+=chunk;});
