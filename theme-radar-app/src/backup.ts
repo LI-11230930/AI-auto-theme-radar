@@ -16,6 +16,19 @@ const columns:Record<string,string[]>={
   logs:['id','created_at','event','data'],cooldowns:['scope','retry_at','updated_at'],delivery_items:['delivery_id','item_key','fingerprint']
 };
 const names=Object.keys(columns),maxBytes=1024*1024*1024;
+let expectedShapes:Record<string,string>|undefined;
+/** Compare constraints, not auto-generated index names or SQL formatting. */
+function schemaShape(db:DatabaseSync,name:string){
+  const fields=db.prepare('SELECT * FROM pragma_table_xinfo(?)').all(name).map((r:any)=>({name:r.name,type:r.type,notnull:r.notnull,default:r.dflt_value,pk:r.pk,hidden:r.hidden}));
+  const foreignKeys=db.prepare('SELECT * FROM pragma_foreign_key_list(?)').all(name).map((r:any)=>JSON.stringify({seq:r.seq,table:r.table,from:r.from,to:r.to,onUpdate:r.on_update,onDelete:r.on_delete,match:r.match})).sort();
+  const uniqueKeys=db.prepare('SELECT * FROM pragma_index_list(?)').all(name).filter((r:any)=>r.unique===1).map((r:any)=>JSON.stringify({partial:r.partial,fields:db.prepare('SELECT * FROM pragma_index_xinfo(?)').all(r.name).filter((c:any)=>c.key===1).map((c:any)=>({seq:c.seqno,cid:c.cid,name:c.name,desc:c.desc,coll:c.coll}))})).sort();
+  const flags=db.prepare('SELECT wr,strict FROM pragma_table_list WHERE schema=\'main\' AND name=?').get(name);
+  return JSON.stringify({fields,foreignKeys,uniqueKeys,flags});
+}
+function referenceShapes(){
+  if(!expectedShapes){const reference=new Store(':memory:');try{expectedShapes=Object.fromEntries(names.map(name=>[name,schemaShape(reference.db,name)]));}finally{reference.close();}}
+  return expectedShapes;
+}
 function regularFile(path:string){try{const info=lstatSync(path);return info.isFile()&&!info.isSymbolicLink()?info:null;}catch{return null;}}
 function openBackup(path:string){
   const info=regularFile(path);if(!info)throw new RadarError('BACKUP_NOT_FOUND','备份不存在或不是普通本机文件');
@@ -34,7 +47,8 @@ function validateDatabase(db:DatabaseSync){
   if(schema.some(row=>row.type==='trigger'||row.type==='view'||/CREATE\s+VIRTUAL\s+TABLE/i.test(row.sql||'')))throw new RadarError('INVALID_BACKUP_SCHEMA','备份包含本工具未使用的视图、触发器或虚拟表');
   const tables=schema.filter(row=>row.type==='table').map(row=>row.name);
   if(tables.length!==names.length||names.some(name=>!tables.includes(name)))throw new RadarError('INVALID_BACKUP_SCHEMA','数据库表结构不属于当前主题雷达账本');
-  for(const name of names){const actual=db.prepare(`PRAGMA table_info("${name}")`).all().map((row:any)=>row.name);if(JSON.stringify(actual)!==JSON.stringify(columns[name]))throw new RadarError('INVALID_BACKUP_SCHEMA','数据库字段结构与当前版本不匹配');}
+  const expected=referenceShapes();
+  for(const name of names){const actual=db.prepare(`PRAGMA table_info("${name}")`).all().map((row:any)=>row.name);if(JSON.stringify(actual)!==JSON.stringify(columns[name])||schemaShape(db,name)!==expected[name])throw new RadarError('INVALID_BACKUP_SCHEMA','数据库字段、主键、唯一约束或外键结构与当前版本不匹配');}
   const integrity=db.prepare('PRAGMA quick_check').all();if(integrity.length!==1||Object.values(integrity[0])[0]!=='ok'||db.prepare('PRAGMA foreign_key_check').all().length)throw new RadarError('BACKUP_INTEGRITY_FAILED','备份完整性或关联检查未通过，未修改原备份');
 }
 /** Row digests are streamed; no titles, bodies, recipients or tokens enter the report. */

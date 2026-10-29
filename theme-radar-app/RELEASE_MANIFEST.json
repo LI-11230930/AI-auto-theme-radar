@@ -1,5 +1,5 @@
 {
-  "version": "0.1.0-beta.31",
+  "version": "0.1.0-beta.32",
   "scope": "public beta source; no credentials or runtime data; see documented capability boundaries",
   "files": [
     {
@@ -165,7 +165,7 @@
     {
       "path": "package.json",
       "bytes": 418,
-      "sha256": "a1e58a54fd476456b824fc0256203b53d7c5664fb05ec09ec30e3f4d1cbdba76"
+      "sha256": "2a06c779021b6f82b932a6cf16bf562bb1f5e94fd4fa2639563645f44d2b3545"
     },
     {
       "path": "src/archive-reading.ts",
@@ -224,8 +224,8 @@
     },
     {
       "path": "src/backup.ts",
-      "bytes": 9193,
-      "sha256": "3dc9f3f64adddeefe4e559e8f5073f5e077334163978cb31a0e91fd7dcf5cd02"
+      "bytes": 10643,
+      "sha256": "ff92d32240a84f5b399392d66a9e95079fccfea7e8a41542ed58a6c4de9e0a09"
     },
     {
       "path": "src/bilibili-body-quality.ts",
@@ -470,7 +470,7 @@
     {
       "path": "src/runtime-status.ts",
       "bytes": 1507,
-      "sha256": "1c5e16ea86cbb72854673c8c58c98e74c4902d1917750912e6506d13b58d91d0"
+      "sha256": "3b37f0164f45b6607458db3dfffaedd6e00f0cec141e484bacb3574e2b1e9ecc"
     },
     {
       "path": "src/sample-review.ts",
@@ -646,6 +646,11 @@
       "path": "tests/automation-shutdown.test.ts",
       "bytes": 4824,
       "sha256": "7bd5ac0be8e7b697adc2504181cb326596d987015afa3f16ab08eafbc5843d1c"
+    },
+    {
+      "path": "tests/backup-constraints.test.ts",
+      "bytes": 5587,
+      "sha256": "a1d8c5684887c257f36231edbbd01c227cf65ab055a7f01558d7b676f64910e9"
     },
     {
       "path": "tests/backup-crash.test.ts",
@@ -1231,8 +1236,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 15521,
-      "sha256": "96ee151c7ce9d315e3b40f2ef3e158bfc3d63add6820d740ab969eb646d01b84"
+      "bytes": 15896,
+      "sha256": "523fa3dcc85961a9a5b0cd16b3335b71b15683d2741d5bc63647c4c546fb715e"
     },
     {
       "path": ".gitignore",
@@ -1247,7 +1252,7 @@
     {
       "path": "package.json",
       "bytes": 476,
-      "sha256": "d38e3b635889b38d1e400551f32f17265f134399e07109f1b7824dffb186ff7f"
+      "sha256": "98cf545094e6b64d3244420d677815b185e82957595e755f001daee31c61554a"
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
@@ -1256,8 +1261,8 @@
     },
     {
       "path": "CHANGELOG.md",
-      "bytes": 16662,
-      "sha256": "f4a5b19d8454c5b6c38d0fb71c74d80c95f657af63bcb997f9d311685d7b4517"
+      "bytes": 17159,
+      "sha256": "2cca000784588d06047ac75f4276cbdd2ad339811df07078a3c1280673132302"
     },
     {
       "path": ".github/workflows/ci.yml",
@@ -1301,8 +1306,8 @@
     },
     {
       "path": "docs/LIMITATIONS.md",
-      "bytes": 4797,
-      "sha256": "6cd3376731b4aae2f3a31ec095e0135308cda78b6d217e819bdc0a56d424d8d3"
+      "bytes": 5085,
+      "sha256": "6aff86b61527e7fcea4894cf2bcc54e63516964b9e75cfd2dee6694ca3d4d25c"
     },
     {
       "path": "docs/MAIL_FEEDBACK.md",
@@ -1312,7 +1317,7 @@
     {
       "path": "docs/PUBLICATION.md",
       "bytes": 2325,
-      "sha256": "ae9cad9371864cc08b9769ca5b1ffb914f485d3b5ee4135172f2c0ccbcddda7c"
+      "sha256": "f9a119fe561d55a549183fb35d5bb07f03e8f8153fb1ac28c5265078b6cc0780"
     },
     {
       "path": "docs/READING_BOUNDS.md",
@@ -1322,7 +1327,7 @@
     {
       "path": "docs/RELEASING.md",
       "bytes": 1012,
-      "sha256": "9ce16d72757818f7fb39de41b2f8f48c1fcd5e8162d89ba4514f72a2414fe3e5"
+      "sha256": "ecb33f5f58cb4c441661f8f6f9f3578d1fb8f77f2ff1c2530eb00538ef01f324"
     },
     {
       "path": "docs/USAGE.md",
