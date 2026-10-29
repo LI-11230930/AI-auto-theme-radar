@@ -1,5 +1,5 @@
 {
-  "version": "0.1.0-beta.26",
+  "version": "0.1.0-beta.27",
   "scope": "public beta source; no credentials or runtime data; see documented capability boundaries",
   "files": [
     {
@@ -54,8 +54,8 @@
     },
     {
       "path": "integrations/WORKFLOW.md",
-      "bytes": 4282,
-      "sha256": "0c5d8ed81abe9fb0d3ecce3c29573a7667002421e261472f3ee6642d3ae5f2ee"
+      "bytes": 4330,
+      "sha256": "82476b7c7cc094d1071c085b5644fd452f7bf29bee8daee898c8d0b90966078a"
     },
     {
       "path": "interest-mail-policy.example.json",
@@ -159,8 +159,8 @@
     },
     {
       "path": "package.json",
-      "bytes": 418,
-      "sha256": "eb7434325a1b55b1e954e27969ec3fd882c427df6ada0ca98013b028e700af99"
+      "bytes": 401,
+      "sha256": "fe7995322a06f722d1e56b105b8b5c5d6c1a50283e593be60e4b2d679da74700"
     },
     {
       "path": "src/archive-reading.ts",
@@ -393,6 +393,11 @@
       "sha256": "4cb50757359992da62d2c2e4ba2c3a8f848cf87e62edb85cd38367104767b144"
     },
     {
+      "path": "src/log-redaction.ts",
+      "bytes": 1250,
+      "sha256": "37f18624bb72da64215f474f086143d7d8f53ac4d6f17fb22c5a1f871a3c0c52"
+    },
+    {
       "path": "src/mail-template.ts",
       "bytes": 5025,
       "sha256": "fb7025014582791c24bda313fd5f7cee99fea3bb9e124f48c80d0330346e48f2"
@@ -454,8 +459,8 @@
     },
     {
       "path": "src/runtime-status.ts",
-      "bytes": 1507,
-      "sha256": "0dc10dacc63299e192c297adfb1cd45b5c6977d4034f810bf5b4295062269d01"
+      "bytes": 1493,
+      "sha256": "e138252108ade962567992b5ffc5ce0db4137f6c4ab62bd58aa9b45e5c23b8e2"
     },
     {
       "path": "src/sample-review.ts",
@@ -489,8 +494,8 @@
     },
     {
       "path": "src/store.ts",
-      "bytes": 36774,
-      "sha256": "a006c4f9aa5c0caa7719565a8c34bb8b2050978ff7824c2675a260dcad31c2b6"
+      "bytes": 36640,
+      "sha256": "4697c9e1b901e60b19beee8cad5a94a60f84bb161d2a9febac2ea9c5ff5edefe"
     },
     {
       "path": "src/time.ts",
@@ -853,6 +858,11 @@
       "sha256": "2b24a44c0929224a84fbc95b5ecf94827b8bba953bca857dfa788bd39bc8c225"
     },
     {
+      "path": "tests/log-redaction.test.ts",
+      "bytes": 3832,
+      "sha256": "00ae510fe337e1244caa10f05a284bfa4fcdb5e91c077108d09064ae17aac7a6"
+    },
+    {
       "path": "tests/mail-template.test.ts",
       "bytes": 4828,
       "sha256": "4d9e1ef880cd4f0bb42d27801ebe629c345d1a2d74cc7330393de66beeb98615"
@@ -1186,8 +1196,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 13430,
-      "sha256": "3114e491a066d3cbdbf5612d6aa1aec1b78f4de0897dfc2bdfad34b36226117d"
+      "bytes": 13655,
+      "sha256": "1b9b21f1d56ca53041b7f2a1334ed5908310589bfa469252ab0dfdecd26159b6"
     },
     {
       "path": ".gitignore",
@@ -1201,8 +1211,8 @@
     },
     {
       "path": "package.json",
-      "bytes": 476,
-      "sha256": "714ac667fce2570e8e0c8124793a0e417a26f3256cb8d1172a8ae649c34d3180"
+      "bytes": 461,
+      "sha256": "6e12f799601f9a4a248d7f8f97c42cf28068266debb4d4ef973046c763a3c9d9"
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
@@ -1211,8 +1221,8 @@
     },
     {
       "path": "CHANGELOG.md",
-      "bytes": 14465,
-      "sha256": "eb8e9d4340353100326fec3d047cbe467004c089c04e36a5daf2b38893c0d385"
+      "bytes": 14638,
+      "sha256": "3cbb8cfd1b4ed20013187628322c2888a412d90cccdadf5dbe890e00a0fc9d28"
     },
     {
       "path": ".github/workflows/ci.yml",
@@ -1256,13 +1266,13 @@
     },
     {
       "path": "docs/LIMITATIONS.md",
-      "bytes": 3928,
-      "sha256": "10af87a0fb8fce4dcd1c86bba21574144e5a4cf94ef1551452a5a5090471735c"
+      "bytes": 4153,
+      "sha256": "c21011d51f88b40da13ca9b6fb1667235f87fa6258872271a4606cecfee5ff56"
     },
     {
       "path": "docs/PUBLICATION.md",
-      "bytes": 2325,
-      "sha256": "d1f07901c51479726f477820f4a17914d12af26ba96ad40398d29a44e0e3f5b3"
+      "bytes": 2296,
+      "sha256": "8d695ee8a0cf7f8e69832d3093fb1caf1e0e26cd45cabc59548b6caca8d44f8f"
     },
     {
       "path": "docs/READING_BOUNDS.md",
@@ -1271,8 +1281,8 @@
     },
     {
       "path": "docs/RELEASING.md",
-      "bytes": 1012,
-      "sha256": "27d8bd4b18a83b992e4c6d196bd624b08c886ec0e2ce060fea8c7b08013ee12a"
+      "bytes": 997,
+      "sha256": "4ef04d4099bcc7b5e080a4f43179f964e90e14c7b03db2378b0a2f567f92296f"
     },
     {
       "path": "docs/USAGE.md",

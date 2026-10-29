@@ -10,6 +10,7 @@ import {sourceTimestamp} from './selection.ts';
 import {batchAt} from './time.ts';
 import {isEmailAddress} from './email-address.ts';
 import {feedbackTopic} from './topic-preferences.ts';
+import {redactLogText,serializeLogData} from './log-redaction.ts';
 
 export type BrowserObservationGuard={topicId:string;topicRevision:number;authorUid:string;readingSnapshot:string;page:number;duration:number};
 
@@ -57,8 +58,8 @@ export class Store {
   close(){this.db.close();}
   tx<T>(fn:()=>T):T {this.db.exec('BEGIN IMMEDIATE');try{const value=fn();this.db.exec('COMMIT');return value;}catch(error){this.db.exec('ROLLBACK');throw error;}}
   log(event: string,data: Record<string,unknown>={}) {
-    const safe=JSON.stringify(data,(_key,value)=>typeof value==='string'?value.replace(/(Bearer\s+)[\w.\-]+/gi,'$1[redacted]').replace(/((?:SESSDATA|bili_jct|password|access_token|refresh_token|authorization)["'\s:=]+)[^\s,;"}]+/gi,'$1[redacted]'):value);
-    this.db.prepare('INSERT INTO logs(created_at,event,data) VALUES(?,?,?)').run(now(),event,safe);
+    const safe=serializeLogData(data);
+    this.db.prepare('INSERT INTO logs(created_at,event,data) VALUES(?,?,?)').run(now(),redactLogText(event),safe);
   }
   saveTopic(topic:Topic,expectedRevision?:number){validateTopic(topic);return this.tx(()=>{const old=this.db.prepare('SELECT revision FROM subscriptions WHERE id=?').get(topic.id) as any;if(expectedRevision!==undefined&&Number(old?.revision||0)!==expectedRevision)throw new RadarError('REVISION_CONFLICT','订阅已更新');const revision=Number(old?.revision||0)+1;this.db.prepare('INSERT INTO subscriptions VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,data=excluded.data,updated_at=excluded.updated_at').run(topic.id,revision,JSON.stringify(topic),now());return revision;});}
   topics(){return this.db.prepare('SELECT data,revision FROM subscriptions ORDER BY id').all().map((r:any)=>({...JSON.parse(r.data),revision:r.revision}));}
