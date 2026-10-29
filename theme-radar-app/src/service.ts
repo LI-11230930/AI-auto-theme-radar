@@ -18,7 +18,7 @@ import {hostCapability} from './host-capability.ts';
 import {analyzeArchived,archivedAnalysis} from './archive-reading.ts';
 import {runtimeStatus} from './runtime-status.ts';
 import {notificationPlan} from './digest-candidates.ts';
-import {githubDigestCapability,mailFormatCapability,emailCapability} from './capability-summary.ts';
+import {githubDigestCapability,mailFormatCapability,emailCapability,githubReadCapability} from './capability-summary.ts';
 import {plans as automationPlans} from './automation-plan.ts';
 import {initializeGithubCredential,githubCredentialStatus} from './github-credential.ts';
 
@@ -32,9 +32,9 @@ export function authorObservationCapability(config:any,store:Store){
   }catch{return {id:'bilibili-authors',state:'observation_store_error',note:'作者观察目录未完成读取，请核对本地记录；未把错误计为空投稿。'};}
   return {id:'bilibili-authors',state:savedReport(config,'bilibili-authors-live.json')?.sources?.some((s:any)=>s.state==='failed')?'source_access_restricted':'configured_unverified',note:'订阅UID已配置；公共投稿接口限制与浏览器观察分开，实际来源另验，不将失败当作空投稿。'};
 }
-export function capabilityReport(config:any,store:Store){const browser=savedReport(config,'browser-identity.json'),cloud=savedReport(config,'cloud-trial.json'),format=mailFormatCapability(config.dataDir);const active=new GitHubSource(undefined,store).cooldown(),cooldown=!!active;return {at:now(),service:runtimeStatus(),githubCredential:githubCredentialStatus(config),notificationPlan:notificationPlan(config.recipient,{formatState:format.state,sections:format.githubSections}),runtimeEnabled:config.runtimeEnabled,recipient:config.recipient,timezone:config.timezone,sendTimes:config.sendTimes,defaultAgent:config.defaultAgent,topics:store.topics(),stats:store.stats(),capabilities:[
+export function capabilityReport(config:any,store:Store){const browser=savedReport(config,'browser-identity.json'),cloud=savedReport(config,'cloud-trial.json'),format=mailFormatCapability(config.dataDir);const active=new GitHubSource(undefined,store).cooldown(),credential=githubCredentialStatus(config);return {at:now(),service:runtimeStatus(),githubCredential:credential,notificationPlan:notificationPlan(config.recipient,{formatState:format.state,sections:format.githubSections}),runtimeEnabled:config.runtimeEnabled,recipient:config.recipient,timezone:config.timezone,sendTimes:config.sendTimes,defaultAgent:config.defaultAgent,topics:store.topics(),stats:store.stats(),capabilities:[
   {id:'automation',state:automationPlans(store).some(p=>p.enabled)?'plans_enabled':'disabled',note:'统一任务计划'+automationPlans(store).length+'个；自定义频率由本地服务执行，交互模式需当前Agent持续参与，后台模式需选定CLI。计划默认暂停/仅草稿；全局SMTP关闭不代表宿主邮箱计划已关闭，请核对各计划。'},
-  {id:'github',state:cooldown?'rate_limit_cooldown':'available_public_read',note:cooldown?'公开API额度耗尽，等待'+active!.retryAt+'；不要求重复登录或DSH授权。':'公开查询/README/Release/许可证/源码抽样/Daily；活动窗口已过滤，真实请求另记。'},
+  githubReadCapability(credential,active),
   githubDigestCapability(store),
   {id:'cloud',state:cloud?.checks?.publicGitHubSearch?.status==='verified'?'earlier_cloud_probe_saved':'not_verified',note:cloud?'本机保留早期云端只读探测；云端当前有限试运行状态独立见私有站点和进度看板。本地缓存不作云端投递开关判断。':'当前本地运行不能证明云端调度可用。'},
   bilibiliCapability(config,browser,store),

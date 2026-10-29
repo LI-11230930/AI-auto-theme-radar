@@ -31,3 +31,10 @@ export function emailCapability(config:any,store:Store){
  const state=!recipient?'needs_recipient':manual?'manual_policy_configured':smtp?'smtp_configured_unverified':'sender_not_configured';
  return {id:'email',state,confirmedDeliveries:confirmed,note:(!recipient?'尚未配置收件人；可先阅读并查看本地草稿。':manual?'已保存本机B站手动投递策略；当前宿主邮箱连接与可用性需单独核对。':smtp?'SMTP字段与环境凭据已配置，但尚未在本次检查中验证连接或发送。':'已有收件人，尚未配置可核对的发送通道；可先准备草稿。')+` 此收件人在本机有${confirmed}条已确认送达记录，历史记录不替代当前连接验证。`};
 }
+
+/** Offline capability projection; configured credentials never prove live access. */
+export function githubReadCapability(credential:{state:string;source:string;code?:string},cooldown?:{retryAt:string}|null){
+ const blocked=credential.state==='blocked'||credential.state==='not_loaded',state=blocked?(credential.state==='not_loaded'?'credential_not_loaded':'credential_blocked'):cooldown?'rate_limit_cooldown':'available_public_read';
+ const note=blocked?(credential.state==='not_loaded'?'显式GitHub凭据尚未加载，读取被阻止；启动或重连正确服务后复查，不降级匿名。':'显式GitHub凭据当前不可用，读取被阻止；按凭据状态处理，不降级匿名。'):(cooldown?'公开API处于冷却，等待'+cooldown.retryAt+'。':credential.state==='anonymous'?'未配置凭据，公开读取使用匿名额度；本次仅核对本地状态，未验证网络可用性。':'GitHub凭据已配置；公开查询/正文/榜单仍需实际请求，本次不是联网验收。');
+ return {id:'github',state,liveVerified:false,credentialState:credential.state,credentialSource:credential.source,...(blocked?{code:credential.code||'GITHUB_CREDENTIAL_UNAVAILABLE'}:{}),...(cooldown?{retryAt:cooldown.retryAt}:{}),note:note+(blocked&&cooldown?' 同时存在API冷却，等待'+cooldown.retryAt+'。':'')};
+}
