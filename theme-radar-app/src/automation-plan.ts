@@ -52,11 +52,19 @@ export function scheduleStatus(p:AutomationPlan,clock=Date.now()){
  return {timezone:'Asia/Shanghai',dueAt:due&&clock-due<=120000?new Date(due).toISOString():null,nextAt:next?new Date(next).toISOString():null,missedPolicy:'skip; latest occurrence only within 2 minutes; no catch-up'};
 }
 export function automationRunId(planId:string,dueAt:string){return 'automation-run:'+hash(planId+':'+dueAt);}
-export function insertRun(store:Store,p:AutomationPlan,dueAt:string,trigger:'manual'|'schedule',clock=Date.now()){
+export function activeRun(store:Store,clock=Date.now(),planId?:string){
+ const sql="SELECT id FROM jobs WHERE id LIKE 'automation-run:%' AND state='running' AND expires_at>?"+(planId===undefined?'':" AND json_extract(data,'$.planId')=?")+' ORDER BY updated_at DESC,rowid DESC LIMIT 1';
+ return store.db.prepare(sql).get(...(planId===undefined?[clock]:[clock,planId])) as {id:string}|undefined;
+}
+export function preparedHostMail(store:Store,planId:string,revision:number){
+ return store.db.prepare("SELECT r.id FROM jobs r JOIN deliveries d ON d.id=json_extract(r.data,'$.deliveryId') WHERE r.id LIKE 'automation-run:%' AND r.state='done' AND json_extract(r.data,'$.planId')=? AND json_extract(r.data,'$.planRevision')=? AND json_extract(r.data,'$.stage')='awaiting_host_mail' AND d.state='prepared' ORDER BY r.updated_at DESC,r.rowid DESC LIMIT 1").get(planId,revision) as {id:string}|undefined;
+}
+export function insertRun(store:Store,p:AutomationPlan,dueAt:string,trigger:'manual'|'schedule',clock=Date.now(),exclusive=false){
  const id=automationRunId(p.id,dueAt);return store.tx(()=>{
   if(store.job(id))return null;
+  if(exclusive&&preparedHostMail(store,p.id,p.revision))return null;
   const active=store.db.prepare("SELECT id,data FROM jobs WHERE id LIKE 'automation-run:%' AND state='running' AND expires_at>?").all(clock) as any[];
-  if(active.some(row=>JSON.parse(row.data).planId===p.id))return null;
+  if(active.some(row=>exclusive||JSON.parse(row.data).planId===p.id))return null;
   const token=randomUUID(),data={id,planId:p.id,planRevision:p.revision,plan:p,dueAt,trigger,stage:'queued',startedAt:new Date(clock).toISOString(),results:[],emailSent:false};
   store.db.prepare('INSERT INTO jobs VALUES(?,?,?,?,?,?,?)').run(id,'running','automation:'+process.pid,token,clock+600000,JSON.stringify(data),now());return {id,token,data};
  });

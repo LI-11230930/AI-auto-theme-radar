@@ -1,6 +1,6 @@
 import {now,RadarError} from './model.ts';
 import {beijingDate} from './time.ts';
-import {planById,runRows,writePlan,validatePlan} from './automation-plan.ts';
+import {planById,activeRun,preparedHostMail,writePlan,validatePlan} from './automation-plan.ts';
 import type {AutomationPlan} from './automation-plan.ts';
 import type {AutomationRuntime} from './automation-runtime.ts';
 
@@ -70,7 +70,7 @@ export function platformControls(runtime:AutomationRuntime,clock=Date.now()){
      executionState='host_mismatch';executionNote='唤醒宿主与当前Agent不一致，需要在独立会话配置对应宿主';
     }else{executionState='configured';executionNote='唤醒配置已登记；平台、模型和邮箱在实际轮次中核验';}
    }
-   const lastRun=runs.find(r=>r.planId===id)||null,active=runs.find(r=>r.planId===id&&r.state==='running'&&!r.interrupted);
+   const lastRun=runs.find(r=>r.planId===id)||null,active=activeRun(store,clock,id);
    const configured=executionState==='configured';
    return {platform,plan:plan||null,enabled,frequency:platform==='github'?'每天09:00':'开启后每15分钟',configurationCurrent,
     execution:{state:executionState,note:executionNote,liveVerified:false},
@@ -96,7 +96,7 @@ export function triggerPlatform(runtime:AutomationRuntime,input:any,clock=Date.n
  const wakeup=runtime.store.job('platform-wakeups');if(wakeup&&JSON.parse((wakeup as any).data).status!=='ACTIVE')return {started:false,reason:'wakeup_paused'};
  const base=planById(runtime.store,'personal-radar');if(base&&canonical(p)!==canonical(derivedPlan(runtime,input.platform,base,p)))throw new RadarError('CONFIGURATION_CHANGED','平台配置与统一配置不一致，请先保存统一配置');
  if(p.agent!==input.agent)throw new RadarError('AGENT_MISMATCH','当前宿主与平台计划不符');
- const queued=runRows(runtime.store).find(r=>r.planId===id&&r.planRevision===p.revision&&r.state==='done'&&r.stage==='awaiting_host_mail'&&runtime.store.delivery(r.deliveryId)?.state==='prepared');
+ const queued=preparedHostMail(runtime.store,id,p.revision);
  if(queued)return {started:false,resumeMail:true,runId:queued.id,reason:'prepared_mail_waiting'};
  const date=beijingDate(new Date(clock)),local=new Date(clock+8*3600000),minute=local.getUTCHours()*60+local.getUTCMinutes();
  if(input.platform==='github'&&(minute<540||minute>=555))return {started:false,reason:'outside_0900_window'};
@@ -104,9 +104,9 @@ export function triggerPlatform(runtime:AutomationRuntime,input:any,clock=Date.n
  if(attempts.filter(r=>{const a=JSON.parse(r.data);return a.date===date&&a.planId===p.id;}).length>=p.maxMessagesPerDay)return {started:false,reason:'daily_mail_limit'};
  const bucket=input.platform==='github'?date:String(Math.floor(clock/900000)),marker='platform-trigger:'+input.platform+':'+bucket;
  if(runtime.store.job(marker))return {started:false,reason:'already_triggered'};
- const active=runRows(runtime.store).find(r=>r.state==='running'&&!r.interrupted);if(active)return {started:false,reason:'another_round_running',runId:active.id};
+ const active=activeRun(runtime.store,clock);if(active)return {started:false,reason:'another_round_running',runId:active.id};
  const due=input.platform==='github'?new Date(date+'T09:00:00+08:00').toISOString():new Date(Math.floor(clock/900000)*900000).toISOString();
- const result=runtime.launch(p,due,'schedule',clock);
+ const result=runtime.launch(p,due,'schedule',clock,true);
  if(result.started)runtime.store.db.prepare('INSERT OR IGNORE INTO jobs VALUES(?,?,?,?,?,?,?)').run(marker,'done','platform-driver','',0,JSON.stringify({runId:result.runId,platform:input.platform,at:now()}),now());
  return {...result,planId:id};
 }

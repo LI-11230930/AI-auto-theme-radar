@@ -11,7 +11,7 @@
 ```powershell
 git remote add origin https://github.com/YOUR_USERNAME/theme-radar.git
 git push -u origin main
-git push origin v0.1.0-beta.32
+git push origin v0.1.0-beta.33
 ```
 
 浏览器登录不一定等于Git命令行已认证。若Git弹出账户授权，使用自己的账号完成；不要把令牌写入命令或源码。也可用GitHub Desktop添加此本地仓库，再Publish repository，并取消Keep this code private。

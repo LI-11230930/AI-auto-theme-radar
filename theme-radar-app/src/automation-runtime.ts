@@ -41,13 +41,13 @@ export class AutomationRuntime{
   for(const p of plans(this.store)){if(!p.enabled)continue;if(p.execution==='attached'&&clock-(this.online.get(p.agent)||0)>30000)continue;const due=scheduleStatus(p,clock).dueAt;if(due)try{this.launch(p,due,'schedule',clock);this.blocked.delete(p.id);}catch(error){this.blocked.set(p.id,publicError(error));}}
  }
  startRun(id:string){const p=planById(this.store,id);if(!p)throw new RadarError('NOT_FOUND','计划不存在');if(p.execution==='attached'&&Date.now()-(this.online.get(p.agent)||0)>30000)throw new RadarError('AGENT_OFFLINE','请先让选定Agent调用automation_next连接当前会话；不会改用其他模型');return this.launch(p,now(),'manual');}
- launch(p:AutomationPlan,due:string,trigger:'manual'|'schedule',clock=Date.now()){
+ launch(p:AutomationPlan,due:string,trigger:'manual'|'schedule',clock=Date.now(),exclusive=false){
   if(this.closed)throw new RadarError('CANCELLED','执行服务正在关闭');
   if(p.execution==='background'&&(p.agent==='WorkBuddy'||!this.config.runners[p.agent]?.command))throw new RadarError('RUNNER_NOT_FOUND','选定宿主无可用后台入口，不降级为DSH');
   if(p.delivery!=='draft'&&(!p.enabled||!p.sendApproved))throw new RadarError('MAIL_DISABLED','发送计划尚未启用；请启用并授权，或改为仅草稿后运行');
   if(p.delivery==='smtp'&&(!this.config.runtimeEnabled||!this.config.email.enabled))throw new RadarError('DELIVERY_DISABLED','全局SMTP尚未启用；未启动采集或投递');
   if(p.delivery==='smtp'&&(this.config.email.transport!=='smtp'||!this.config.email.host||this.config.email.from!==p.from||!process.env[this.config.email.passwordEnv]))throw new RadarError('EMAIL_SETUP_REQUIRED','SMTP连接、发件身份或密码环境变量未就绪；未启动采集');
-  const lease=insertRun(this.store,p,due,trigger,clock);if(!lease)return {started:false,reason:'duplicate_or_active'};
+  const lease=insertRun(this.store,p,due,trigger,clock,exclusive);if(!lease)return {started:false,reason:'duplicate_or_active'};
   lease.data.topicRevisions=Object.fromEntries(this.store.topics().filter(t=>p.topicIds.includes(t.id)).map(t=>[t.id,t.revision]));
   const controller=new AbortController();this.active.set(lease.id,controller);this.runningData.set(lease.id,lease.data);
   this.execute(p,lease,controller.signal).finally(()=>{this.active.delete(lease.id);this.runningData.delete(lease.id);});return {started:true,runId:lease.id};
