@@ -103,3 +103,5 @@ MCP、CLI与服务启动时共用同一加载器，修改记录后重启服务�
 ## 可选灵感跟进
 
 统一计划可配置`inspiration: {enabled: true, maxCards: 1, maxRepositoryReads: 1}`。需包含B站；旧配置可完全省略，保持关闭。每轮卡预算1–3，新仓库补读预算0–3，最多额外3分钟；只跟进本轮精选中的明确引用。首页配置同步到既有B站子计划，GitHub子计划关闭此项，开关/频率与投递额度保留。完整任务协议与失败隔离见[灵感卡指南](INSPIRATION.md)。
+
+回执报告与发送分开：mail_report响应丢失时，核对原投递记录后可仅重复报告完全相同的outcome和providerMessageId；返回duplicate=true不改变原记录。不补填、替换消息ID，不把submitted或uncertain升级为送达，更不能重新claim或发送。此规则不提供邮件传输重试。

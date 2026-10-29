@@ -137,7 +137,18 @@ export class AutomationRuntime{
   const delivery=this.store.delivery(run.deliveryId),body=JSON.parse(delivery.body);return {deliveryId:delivery.id,from:target.from,to:delivery.recipient,subject:body.subject,text:body.text,html:body.html,contentHash:frozenContentHash(body),instruction:'核对当前真实邮箱身份后原样发送一次，再report；结果不明记uncertain，不重试'};
  }
  reportMail(input:{deliveryId:string;outcome:string;providerMessageId?:string}){
-  if(typeof input.deliveryId!=='string'||!input.deliveryId.startsWith('automation-mail:')||!['submitted','uncertain'].includes(input.outcome)||input.providerMessageId!==undefined&&(typeof input.providerMessageId!=='string'||input.providerMessageId.length>2000||/[\r\n]/.test(input.providerMessageId)))throw new RadarError('INVALID_INPUT','只允许报告本轮submitted或uncertain');
-  const delivery=this.store.delivery(input.deliveryId);if(!delivery||delivery.state!=='submitting')throw new RadarError('INVALID_STATE','投递未领取或已报告');return this.store.transitionDelivery(input.deliveryId,input.outcome,{source:'host_self_report',providerMessageId:input.providerMessageId||null,independentlyConfirmed:false});
+  if(!input||typeof input!=='object'||Array.isArray(input)||typeof input.deliveryId!=='string'||!input.deliveryId.startsWith('automation-mail:')||!['submitted','uncertain'].includes(input.outcome)||input.providerMessageId!==undefined&&(typeof input.providerMessageId!=='string'||!input.providerMessageId.trim()||input.providerMessageId.length>2000||/[\r\n]/.test(input.providerMessageId)))throw new RadarError('INVALID_INPUT','只允许报告本轮submitted或uncertain与有界消息ID');
+  return this.store.tx(()=>{
+   const delivery=this.store.delivery(input.deliveryId);
+   if(delivery?.state===input.outcome){
+    let receipt:any;try{receipt=JSON.parse(delivery.receipt);}catch{}
+    if(receipt?.source==='host_self_report'&&receipt.independentlyConfirmed===false&&(receipt.providerMessageId??null)===(input.providerMessageId??null))return {...delivery,duplicate:true,independentlyConfirmed:false};
+    throw new RadarError('RECEIPT_CONFLICT','该状态已有不同回执，未覆盖原记录；请只核对结果，不重发邮件');
+   }
+   if(!delivery||delivery.state!=='submitting')throw new RadarError('INVALID_STATE','投递未领取或已报告；不逆转结果或自行确认送达');
+   const receipt={source:'host_self_report',providerMessageId:input.providerMessageId??null,independentlyConfirmed:false};
+   this.store.db.prepare('UPDATE deliveries SET state=?,receipt=?,updated_at=? WHERE id=? AND state=?').run(input.outcome,JSON.stringify(receipt),now(),input.deliveryId,'submitting');
+   return {...this.store.delivery(input.deliveryId),duplicate:false,independentlyConfirmed:false};
+  });
  }
 }
