@@ -19,7 +19,7 @@ import {automationAgents,plans,planById,savePlan,scheduleStatus,occurrenceStart,
 import type {AutomationPlan} from './automation-plan.ts';
 import type {Store} from './store.ts';
 import {absolutePreviewUrl} from './operator-url.ts';
-import {frozenContentHash,oneOffApproval} from './automation-outbox.ts';
+import {frozenContentHash,oneOffApproval,validateFrozenSources} from './automation-outbox.ts';
 import {savePersonalConfiguration} from './platform-controls.ts';
 import {runInspirationFollowups} from './inspiration-followup.ts';
 import {inspirationTaskIssue} from './inspiration.ts';
@@ -115,7 +115,11 @@ export class AutomationRuntime{
  }
  reserveAttempt(p:AutomationPlan,run:any,claim:()=>void){this.ensureOpen();return this.store.tx(()=>{
   const current=planById(this.store,p.id),once=oneOffApproval(this.store,run,p);if(!current||current.revision!==p.revision||!once&&(!current.enabled||!current.sendApproved||current.delivery==='draft'))throw new RadarError('MAIL_DISABLED','计划未启用或发送授权已变化');
-  if(this.store.topics().some(t=>p.topicIds.includes(t.id)&&(!t.enabled||t.revision!==run.topicRevisions[t.id])))throw new RadarError('TOPIC_CHANGED','主题已变化，未领取旧草稿发送');
+  // Preview and both transports must validate the same complete frozen mapping.
+  // Keep this under the attempt write lock, including the last ledger comparison.
+  validateFrozenSources(this.store,run);
+  const frozen=this.store.delivery(run.deliveryId),target=once||p;
+  if(!frozen||frozen.recipient!==target.recipient||hash(frozen.body)!==frozen.body_hash||frozenContentHash(JSON.parse(frozen.body))!==frozenContentHash(run.body))throw new RadarError('DRAFT_CHANGED','投递账本与授权的冻结正文或收件人不符');
   for(const item of this.store.deliveryItems(run.deliveryId))if(item.fingerprint!==this.store.fingerprint(item.item_key))throw new RadarError('SOURCE_CHANGED','冻结邮件的材料已变化，未领取发送');
   const attemptId='automation-attempt:'+hash(run.id);if(this.store.job(attemptId))throw new RadarError('MAIL_ALREADY_CLAIMED','该轮已领取发送，失败或未知均不重发');
   const date=beijingDate(),attempts=this.store.db.prepare("SELECT data FROM jobs WHERE id LIKE 'automation-attempt:%'").all() as any[];
