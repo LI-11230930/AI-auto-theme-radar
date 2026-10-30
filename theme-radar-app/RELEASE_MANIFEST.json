@@ -1,5 +1,5 @@
 {
-  "version": "0.1.0-beta.34",
+  "version": "0.1.0-beta.35",
   "scope": "public beta source; no credentials or runtime data; see documented capability boundaries",
   "files": [
     {
@@ -165,7 +165,7 @@
     {
       "path": "package.json",
       "bytes": 401,
-      "sha256": "1ad30dbcf759ac7d4e60af23aa637f32b1a61df1f4be7601865068bc26724fc5"
+      "sha256": "9b964b0508c3012af49d686f85ea9f14bd183cafa026fea452cef9815ed84aa8"
     },
     {
       "path": "src/archive-reading.ts",
@@ -379,8 +379,8 @@
     },
     {
       "path": "src/interest-round.ts",
-      "bytes": 15042,
-      "sha256": "85206e29fbd862708cf5fa6fd4fe2cbf34af158921f85ff532f250119192aafe"
+      "bytes": 15834,
+      "sha256": "6034eee83b8b0e0db69446b668019f959a1aab14fd35d8e9a84efc50e09ece12"
     },
     {
       "path": "src/interest-service.ts",
@@ -470,7 +470,7 @@
     {
       "path": "src/runtime-status.ts",
       "bytes": 1493,
-      "sha256": "c3ea78fc74060200aaef561356ac11fcbf2e19714798073351c39464919ff65e"
+      "sha256": "bab84e192519228f3bc6ae25959bf95a6aa2f47355021cd21f3b7f7ba5f499b0"
     },
     {
       "path": "src/sample-review.ts",
@@ -868,9 +868,14 @@
       "sha256": "5f7b2afb04fe680b269cf460b5828f53816a3ad47549a9780e7c79ff09c298cd"
     },
     {
+      "path": "tests/interest-recovery-persistence.test.ts",
+      "bytes": 2850,
+      "sha256": "40ef13fe89113e19263ca2de0b4360800f4b178522188e0483fc409f89bec7fb"
+    },
+    {
       "path": "tests/interest-round.test.ts",
-      "bytes": 16730,
-      "sha256": "cc7a310504687f64ebd6e9049a8b87e7d2b216a142759e04f5338e2b47dae87a"
+      "bytes": 21020,
+      "sha256": "0bbe4fae73dbe7e82da48f9745a0e0487c97a5eb512ed22403e67522965f6934"
     },
     {
       "path": "tests/interest-source.test.ts",
@@ -924,8 +929,8 @@
     },
     {
       "path": "tests/operator-connection.test.ts",
-      "bytes": 4559,
-      "sha256": "1d52ccd5f9b3b08d22c96693ff85850d91d67e7def914a83016070a648f411ed"
+      "bytes": 4761,
+      "sha256": "ed210ed94c9b72073279c11ba3dc8a5bf4534047a34228e39075f024e4163913"
     },
     {
       "path": "tests/operator-startup.test.ts",
@@ -1246,8 +1251,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 16399,
-      "sha256": "d7745e51451cab9fefc3a02b98a7384238b59f086f0798d72eb9a36024b90b28"
+      "bytes": 16735,
+      "sha256": "88b824594abd52349a302cf0069bae78e0868bec34185acbf2145a3269aee9e2"
     },
     {
       "path": ".gitignore",
@@ -1262,7 +1267,7 @@
     {
       "path": "package.json",
       "bytes": 461,
-      "sha256": "aaf386917df2a6e1a0f641d02357874e26004ee74a500d7d71f4991783489cda"
+      "sha256": "00be69ac9ddb769aadc839eb013bb7ae86939fc3a883e8e14a88be19434ddec4"
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
@@ -1271,8 +1276,8 @@
     },
     {
       "path": "CHANGELOG.md",
-      "bytes": 17980,
-      "sha256": "a6d3ec7c5c6aad7d557caf61ae82bde7013fd8eba37ae15ff36fdb34a69f8a00"
+      "bytes": 18446,
+      "sha256": "c27bc4ccb03bfa3f1513d0b2d01f6ca27f7496ba9528b67ebed6753ac6005037"
     },
     {
       "path": ".github/workflows/ci.yml",
@@ -1317,7 +1322,7 @@
     {
       "path": "docs/LIMITATIONS.md",
       "bytes": 5057,
-      "sha256": "b53995aca18bb494c4842826d124276937bf4888443cbed274fc6836a840fa08"
+      "sha256": "24cb8a4027f098de209d1e30b8c562dc441e2c37d72c7ccaabc9767b0cc1e84d"
     },
     {
       "path": "docs/MAIL_FEEDBACK.md",
@@ -1327,7 +1332,7 @@
     {
       "path": "docs/PUBLICATION.md",
       "bytes": 2296,
-      "sha256": "db5c7e6505a7f90b5d5c204e351630d14f99ec0aa2731f230a1a2d095e8a37dd"
+      "sha256": "da4c60a9470898f4661e1b323cb789349399217832a74dfb684a286b1a6ec656"
     },
     {
       "path": "docs/READING_BOUNDS.md",
@@ -1337,7 +1342,7 @@
     {
       "path": "docs/RELEASING.md",
       "bytes": 997,
-      "sha256": "a1d820bfa77bb0c4e18a7449017d25fffc04e03f8db49a05bc93f9993cb4fce8"
+      "sha256": "558112cfaad473d3107c1568f229be58d016c77118d70f74d5b4bfe3739a331c"
     },
     {
       "path": "docs/USAGE.md",

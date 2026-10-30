@@ -3,7 +3,7 @@ import test from 'node:test';import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';
 import {Store} from '../src/store.ts';import {runInterestRound,interestScore,notifiedVideoKeys,lastInterestRun,interestCounts} from '../src/interest-round.ts';
 import {analyzeArchived} from '../src/archive-reading.ts';import {readBilibiliSample} from '../src/bilibili-sample.ts';
-import {RadarError,validateTopic} from '../src/model.ts';import type {Topic} from '../src/model.ts';
+import {RadarError,validateTopic,hash} from '../src/model.ts';import type {Topic} from '../src/model.ts';
 import {withAsrFallback} from '../src/asr-fallback.ts';
 import {beijingDate,batchAt,deliveryKey} from '../src/time.ts';
 const topic:Topic={id:'interest',name:'兴趣测试',description:'按自动化开发兴趣阅读',keywords:['自动化','MCP','AI'],exclude:['广告'],platforms:['bilibili'],bilibiliDiscovery:'interests',bilibiliAuthors:[],enabled:true};
@@ -14,6 +14,7 @@ test('持续模式保留缺正文候选，继续寻找可读内容；取得后�
  const x=setup(t),read=x.source.read;x.source.read=async(...args)=>{const r=await read(...args);if(args[0]===bv(1))r.evidence=[];return r;};
  const first=await x.run({recoverUnread:true});assert.equal(first.results.length,4);assert.equal(first.counts.assessed,3);assert.equal(first.sample.count,3);
  const pending=x.store.db.prepare("SELECT data FROM jobs WHERE id LIKE 'video-recovery:%'").all();assert.equal(pending.length,1);assert.equal(JSON.parse(pending[0].data).candidate.bvid,bv(1));
+ const ready={...JSON.parse(pending[0].data),nextAt:new Date(Date.now()-60000).toISOString()};x.store.db.prepare("UPDATE jobs SET data=? WHERE id LIKE 'video-recovery:%'").run(JSON.stringify(ready));
  x.source.read=read;await x.run({recoverUnread:true,readLimit:1});assert.equal(x.store.db.prepare("SELECT state FROM jobs WHERE id LIKE 'video-recovery:%'").get().state,'done');
 });
 test('真实阅读计数区分取得/缓存、新判断/复用及薄正文跳过，不把尝试数说成新读数',()=>{assert.deepEqual(interestCounts({results:[{state:'assessed',selected:true,reused:true,acquisition:{cached:true}},{state:'assessed',selected:false,reused:false,acquisition:{cached:false}},{state:'insufficient_body',selected:false,acquisition:{cached:true}},{state:'no_subtitle'},{state:'failed'}]}),{attempted:5,newSourceReads:1,cachedMaterials:2,assessed:2,newAssessments:1,reusedAssessments:1,selected:1,insufficientBody:1,unavailableBody:1,failed:1});});
@@ -77,4 +78,39 @@ test('冻结草稿按每日剩余额度截取，其他已选判断留档，不�
  const x=setup(t),reserved:string[]=[];for(let n=100;n<104;n++){const r=await x.source.read(bv(n),{expectedAuthorUid:String(n)});x.store.capture(r.item,r.evidence);reserved.push(r.item.key);}
  const batch=batchAt(beijingDate(),'09:00');x.store.prepareDelivery(deliveryKey('reader@example.org',batch),'email','reader@example.org','{}',reserved);
  const r=await x.run();assert.equal(r.results.filter(v=>v.selected).length,3);assert.equal(r.sample.count,1);assert.equal(r.dailySelectedRemainingAtFreeze,1);assert.equal(r.deferredSelected,2);assert.equal(x.store.assessments(topic.id).length,3);assert.equal(x.store.deliveries().length,1);
+});
+
+function recovery(x:any,n:number,topicId=topic.id,nextAt=new Date(Date.now()-60000).toISOString(),updatedAt='2000-01-01T00:00:00Z'){
+ const id='video-recovery:'+hash(topicId+':'+bv(n)),data={topicId,candidate:candidate(n),reason:'NO_READABLE_BODY',attempts:1,nextAt,state:'pending_reading'};
+ x.store.db.prepare('INSERT INTO jobs VALUES(?,?,?,?,?,?,?)').run(id,'pending','reading-recovery','',0,JSON.stringify(data),updatedAt);return id;
+}
+test('恢复候选先按当前主题和到期时间过滤，旧队首不遮住真正可恢复的视频',async t=>{
+ const x=setup(t);x.source.recommendations=async()=>({items:[],authenticated:true});
+ for(let n=10;n<14;n++)recovery(x,n,n<12?'other-topic':topic.id,new Date(Date.now()+3600000).toISOString());
+ const due=recovery(x,99,topic.id,new Date(Date.now()-60000).toISOString(),'2001-01-01T00:00:00Z');
+ const r=await x.run({recoverUnread:true,readLimit:1});assert.equal(r.results.length,1);assert.equal(r.results[0].itemKey,'bilibili:'+bv(99));assert.equal(r.results[0].source,'recovery');assert.equal(x.store.job(due).state,'done');assert.equal(x.reads(),1);
+});
+test('恢复冷却中的视频再次出现在推荐或搜索也不提前重读，到期后才恢复',async t=>{
+ const x=setup(t);x.source.recommendations=async()=>({items:[candidate(1)],authenticated:true});x.source.search=async()=>[candidate(1)];const id=recovery(x,1,topic.id,new Date(Date.now()+3600000).toISOString()),before=x.store.job(id);
+ const waiting=await x.run({recoverUnread:true,readLimit:1});assert.equal(waiting.counts.attempted,0);assert.equal(x.reads(),0);assert.equal(x.models(),0);assert.deepEqual(x.store.job(id),before);
+ const data=JSON.parse(before.data);data.nextAt=new Date(Date.now()-60000).toISOString();x.store.db.prepare('UPDATE jobs SET data=? WHERE id=?').run(JSON.stringify(data),id);
+ const recovered=await x.run({recoverUnread:true,readLimit:1});assert.equal(recovered.results.length,1);assert.equal(recovered.results[0].source,'recovery');assert.equal(recovered.counts.assessed,1);assert.equal(x.store.job(id).state,'done');
+});
+test('取得正文前的暂时网络故障进入恢复队列，不冒充字幕缺失或已读判断',async t=>{
+ for(const code of ['NETWORK_ERROR','TIMEOUT','CONNECTION_REFUSED']){
+  const x=setup(t);x.source.recommendations=async()=>({items:[candidate(1)],authenticated:true});x.source.read=async()=>{throw new RadarError(code,'offline fixture');};
+  const r=await x.run({recoverUnread:true,readLimit:1}),pending=x.store.job('video-recovery:'+hash(topic.id+':'+bv(1)));
+  assert.equal(r.counts.failed,1);assert.equal(r.counts.assessed,0);assert.equal(x.models(),0);assert.equal(r.results[0].recovery,'pending');assert.ok(pending);const d=JSON.parse(pending.data);assert.equal(d.reason,code);assert.equal(d.attempts,1);assert.ok(Date.parse(d.nextAt)>Date.now());assert.equal(r.sample,undefined);
+ }
+});
+test('未启用恢复的旧手动阅读契约保持，不受持续恢复冷却隐式控制',async t=>{
+ const x=setup(t);x.source.recommendations=async()=>({items:[candidate(1)],authenticated:true});const id=recovery(x,1,topic.id,new Date(Date.now()+3600000).toISOString()),before=x.store.job(id);
+ const r=await x.run({recoverUnread:false,readLimit:1});assert.equal(r.counts.assessed,1);assert.equal(x.reads(),1);assert.deepEqual(x.store.job(id),before);
+});
+test('模型网络错误和作者不符不混入正文取得恢复队列',async t=>{
+ for(const failure of ['model','author']){const x=setup(t);x.source.recommendations=async()=>({items:[candidate(1)],authenticated:true});
+  if(failure==='author')x.source.read=async()=>{throw new RadarError('AUTHOR_MISMATCH','offline fixture');};
+  const r=await x.run({recoverUnread:true,readLimit:1,...(failure==='model'?{analyze:async()=>{throw new RadarError('NETWORK_ERROR','model fixture');}}:{})});
+  assert.equal(r.counts.failed,1);assert.equal(r.counts.assessed,0);assert.equal(x.store.db.prepare("SELECT count(*) n FROM jobs WHERE id LIKE 'video-recovery:%'").get().n,0);assert.equal(r.sample,undefined);
+ }
 });
